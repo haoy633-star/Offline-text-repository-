@@ -178,9 +178,9 @@ Use the sort dropdown at the top of the library to choose `A-Z`, `Z-A`, newest i
 
 顶部排序下拉框可以选择 `A-Z`、`Z-A`、最新导入、最早导入、最近打开。Tag 下拉框可以按自定义标签筛选。标签适合记录已读/未读、作者、喜好、汉化组、题材等。
 
-Use `Per row` to reduce or increase how many cards appear in each row. Use `Mode` to choose page-style browsing when the library is huge, or scroll-style browsing when you want a longer batch on screen. Lower card counts and page-style browsing are recommended for libraries with thousands of files.
+Use `Per row` to reduce or increase how many cards appear in each row. `Scroll` is the classic full scrolling shelf. `Pages` is a separate fixed-screen mode that renders only the current page, shows three rows, and preloads nearby covers before you turn the page. Lower card counts and page-style browsing are recommended for libraries with thousands of files.
 
-可以用 `每排数量` 控制每行显示 4、5 或 6 个卡片。可以用 `显示模式` 选择翻页式浏览或滚动式浏览。文件很多时建议使用较少的每排数量和翻页模式。
+可以用 `每排数量` 控制每行显示 4、5 或 6 个卡片。`滚动` 是经典完整滚动书架；`翻页` 是独立的固定屏幕模式，只渲染当前页，显示三排，并会提前加载相邻页面的封面。文件很多时建议使用较少的每排数量和翻页模式。
 
 ### Admin Tools / 管理员工具
 
@@ -189,15 +189,15 @@ These tools may move files. Read the confirmation dialog carefully before contin
 这些工具可能会移动文件。继续前请仔细阅读确认窗口。
 
 - `整理已导入资源`: choose a destination folder, then move all imported resources into category subfolders. This changes the original file locations.
-- `归档并分类已导入资源`: a larger organization operation for the whole library. It moves imported resources into `Comics`, `Images`, `Text`, `Audio`, `Video`, `Archives`, and `Other`.
+- `归档并分类已导入资源`: choose the final archive/classification destination yourself. It moves imported resources into `Comics`, `Images`, `Text`, `Audio`, `Video`, `Series`, `Archives`, and `Other`.
 - `文件夹漫画压缩为 CBZ`: when enabled, folder-based comics are compressed to `.cbz`; after successful compression, the original comic folder is removed.
-- Cover cache / 封面缓存：off by default. When enabled, the app caches cover previews only, not full books. You can disable and clear it later.
+- Cover cache / 封面缓存：off by default. When enabled, the app caches optimized WebP cover previews only, not full books. You can choose the cache folder, disable it, and clear it later.
 - High performance mode / 高性能模式：recommended when importing thousands of files. It uses more memory, enables cover caching, and renders the shelf in pages instead of drawing every item at once.
 
 - `整理已导入资源`：选择目标文件夹后，把当前库里的资源移动到分类子文件夹。原文件位置会改变。
-- `归档并分类已导入资源`：面向整个库的大整理操作，会移动已导入资源到 `Comics`、`Images`、`Text`、`Audio`、`Video`、`Archives`、`Other`。
+- `归档并分类已导入资源`：面向整个库的大整理操作，你可以自己选择最终归档分类位置；它会移动已导入资源到 `Comics`、`Images`、`Text`、`Audio`、`Video`、`Series`、`Archives`、`Other`。
 - `文件夹漫画压缩为 CBZ`：开启后，文件夹漫画会被压缩成 `.cbz`；压缩成功后原漫画文件夹会被删除。
-- 封面缓存：默认关闭。开启后只缓存封面预览，不缓存整本漫画，可随时关闭并清除。
+- 封面缓存：默认关闭。开启后只缓存优化后的 WebP 封面预览，不缓存整本漫画；可以自定义缓存目录，也可随时关闭并清除。
 - 高性能模式：如果导入了几千到上万文件，建议开启。它会占用更多内存、启用封面缓存，并把书架分页渲染，避免一次性显示所有卡片导致卡顿。
 
 中文简版：
@@ -276,15 +276,9 @@ For text, audio, and video files, the app first checks manually configured playe
 - Lightweight video previews for Video and Series cards / 视频和电视剧卡片支持轻量视频预览
 - Series built-in playback with episode selector / 电视剧内置播放和选集列表
 - Guided Windows installer with install location and shortcut choices / Windows 安装向导支持选择安装位置和快捷方式
-
-## Roadmap / 后续计划
-
-- Manual metadata editing / 手动元数据编辑
-- Double-page comic reading mode / 漫画双页阅读模式
-- Vertical scroll reading mode / 纵向滚动阅读模式
-- Duplicate detection and cleanup report / 重复文件检测和清理报告
-- Optional CBR support / 可选 CBR 支持
-- GitHub Actions release builds / 使用 GitHub Actions 自动生成安装包
+- True separated Scroll and Pages shelf modes / 滚动和翻页书架模式真正分离
+- WebP cover cache with custom cache folder / WebP 封面缓存和自定义缓存目录
+- Compression mode now rebuilds readable CBZ library entries / 压缩模式会重建可阅读的 CBZ 库条目
 
 ## License / 许可证
 

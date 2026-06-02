@@ -43,6 +43,7 @@ export interface AppSettings {
   detectedPlayers: PlayerSettings;
   language: AppLanguage;
   coverCacheEnabled: boolean;
+  coverCacheDirectory: string | null;
   highPerformanceMode: boolean;
 }
 
@@ -75,6 +76,7 @@ export interface AutoOrganizeResult {
   sourcePath: string | null;
   destinationPath: string | null;
   categories: Record<LibraryCategory, number>;
+  items: LibraryItem[];
 }
 
 export interface LibrarySnapshot {

@@ -36,6 +36,7 @@ const api = {
   clearPlayer: (category: LibraryCategory): Promise<AppSettings> => ipcRenderer.invoke("settings:clear-player", category),
   setLanguage: (language: AppLanguage): Promise<AppSettings> => ipcRenderer.invoke("settings:set-language", language),
   setCoverCache: (enabled: boolean): Promise<LibrarySnapshot> => ipcRenderer.invoke("settings:set-cover-cache", enabled),
+  setCoverCacheDirectory: (): Promise<LibrarySnapshot> => ipcRenderer.invoke("settings:set-cover-cache-directory"),
   clearCoverCache: (): Promise<LibrarySnapshot> => ipcRenderer.invoke("settings:clear-cover-cache"),
   setHighPerformance: (enabled: boolean): Promise<LibrarySnapshot> => ipcRenderer.invoke("settings:set-high-performance", enabled),
   revealInExplorer: (filePath: string): Promise<void> => ipcRenderer.invoke("file:reveal", filePath),

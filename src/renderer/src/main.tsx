@@ -124,6 +124,8 @@ const copy = {
     coverCache: "封面缓存",
     enableCache: "启用封面缓存",
     disableCache: "关闭并清除缓存",
+    chooseCacheFolder: "选择缓存目录",
+    cacheFolder: "缓存目录",
     cacheHint: "默认关闭。开启后会占用少量内存/磁盘来加快封面预览。",
     highPerformance: "高性能模式",
     enableHighPerformance: "启用高性能模式",
@@ -230,6 +232,8 @@ const copy = {
     coverCache: "Cover cache",
     enableCache: "Enable cover cache",
     disableCache: "Disable and clear cache",
+    chooseCacheFolder: "Choose cache folder",
+    cacheFolder: "Cache folder",
     cacheHint: "Off by default. Enabling uses a little memory/disk space to speed up cover previews.",
     highPerformance: "High performance mode",
     enableHighPerformance: "Enable high performance",
@@ -274,7 +278,7 @@ function defaultSnapshot(): LibrarySnapshot {
       pages: 0,
       categories: { comic: 0, image: 0, text: 0, audio: 0, video: 0, series: 0, archive: 0, other: 0 }
     },
-    settings: { players: {}, detectedPlayers: {}, language: "zh", coverCacheEnabled: false, highPerformanceMode: false }
+    settings: { players: {}, detectedPlayers: {}, language: "zh", coverCacheEnabled: false, coverCacheDirectory: null, highPerformanceMode: false }
   };
 }
 
@@ -436,14 +440,15 @@ function App(): JSX.Element {
     return [...new Set(snapshot.items.flatMap((item) => item.tags))].sort((a, b) => a.localeCompare(b));
   }, [snapshot.items]);
 
-  const rowsPerPage = displayMode === "paged" ? 2 : snapshot.settings.highPerformanceMode ? 5 : 6;
+  const rowsPerPage = displayMode === "paged" ? 3 : snapshot.settings.highPerformanceMode ? 5 : 6;
   const pageSize = gridColumns * rowsPerPage;
-  const pageCount = Math.max(1, Math.ceil(filteredItems.length / pageSize));
+  const pageCount = displayMode === "paged" ? Math.max(1, Math.ceil(filteredItems.length / pageSize)) : 1;
   const visibleItems = useMemo(() => {
+    if (displayMode === "scroll") return filteredItems;
     const safePage = Math.min(page, pageCount);
     const start = (safePage - 1) * pageSize;
     return filteredItems.slice(start, start + pageSize);
-  }, [filteredItems, page, pageCount, pageSize]);
+  }, [displayMode, filteredItems, page, pageCount, pageSize]);
 
   useEffect(() => {
     if (displayMode !== "paged") return;
@@ -703,6 +708,11 @@ function App(): JSX.Element {
     setSnapshot(next);
   }
 
+  async function chooseCoverCacheDirectory(): Promise<void> {
+    const next = await window.comicShelf.setCoverCacheDirectory();
+    setSnapshot(next);
+  }
+
   async function toggleHighPerformance(): Promise<void> {
     const enable = !snapshot.settings.highPerformanceMode;
     const next = await window.comicShelf.setHighPerformance(enable);
@@ -735,6 +745,9 @@ function App(): JSX.Element {
     setBusy(true);
     try {
       const result = await window.comicShelf.autoOrganizeFolder();
+      if (result.destinationPath) {
+        updateItems(result.items);
+      }
       setViewMode("grid");
       setNotice(
         result.destinationPath
@@ -892,6 +905,13 @@ function App(): JSX.Element {
               <Settings size={16} />
               <span>{snapshot.settings.coverCacheEnabled ? t.disableCache : t.enableCache}</span>
             </button>
+            <button className="organize-button secondary" onClick={() => void chooseCoverCacheDirectory()} disabled={busy}>
+              <FolderOpen size={16} />
+              <span>{t.chooseCacheFolder}</span>
+            </button>
+            <p className="cache-hint" title={snapshot.settings.coverCacheDirectory ?? ""}>
+              {t.cacheFolder}: {snapshot.settings.coverCacheDirectory ?? "Default"}
+            </p>
             {snapshot.settings.coverCacheEnabled && (
               <button className="danger-button" onClick={() => void clearCoverCache()} disabled={busy}>
                 <Trash2 size={16} />
@@ -922,16 +942,21 @@ function App(): JSX.Element {
             <div>
               <h2>{filter === "favorite" ? t.favorite : filter === "all" ? t.library : t.categories[filter]}</h2>
               <p>
-                {filteredItems.length} {t.visible} · {t.page} {Math.min(page, pageCount)} / {pageCount}
+                {filteredItems.length} {t.visible}
+                {displayMode === "paged" ? ` · ${t.page} ${Math.min(page, pageCount)} / ${pageCount}` : ""}
               </p>
             </div>
             <div className="topbar-controls">
-              <button disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
-                {t.prevPage}
-              </button>
-              <button disabled={page >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>
-                {t.nextPage}
-              </button>
+              {displayMode === "paged" && (
+                <>
+                  <button disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
+                    {t.prevPage}
+                  </button>
+                  <button disabled={page >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>
+                    {t.nextPage}
+                  </button>
+                </>
+              )}
               <label>
                 <span>{t.sort}</span>
                 <select value={sortKey} onChange={(event) => setSortKey(event.target.value as LibrarySortKey)}>

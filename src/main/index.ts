@@ -7,6 +7,7 @@ import { copyFile, cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } f
 import { basename, dirname, extname, join, parse, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import JSZip from "jszip";
+import sharp from "sharp";
 import type {
   AppLanguage,
   AppSettings,
@@ -66,6 +67,11 @@ function importCachePath(): string {
 
 function coverCachePath(): string {
   return join(app.getPath("userData"), "cover-cache");
+}
+
+async function activeCoverCachePath(): Promise<string> {
+  const settings = await readSettings();
+  return settings.coverCacheDirectory || coverCachePath();
 }
 
 function now(): string {
@@ -151,20 +157,28 @@ async function cacheCoverIfEnabled(itemId: string, coverPath: string | null): Pr
     return coverPath;
   }
 
-  const cachedPath = join(coverCachePath(), `${itemId}.png`);
-  await mkdir(coverCachePath(), { recursive: true });
-  const image = nativeImage.createFromPath(coverPath);
-  if (image.isEmpty()) {
-    return coverPath;
+  const cachePath = settings.coverCacheDirectory || coverCachePath();
+  const cachedPath = join(cachePath, `${itemId}.webp`);
+  await mkdir(cachePath, { recursive: true });
+  try {
+    await sharp(coverPath).rotate().resize({ width: 360, height: 540, fit: "cover" }).webp({ quality: 78 }).toFile(cachedPath);
+    return cachedPath;
+  } catch {
+    const fallbackPath = join(cachePath, `${itemId}.jpg`);
+    const image = nativeImage.createFromPath(coverPath);
+    if (image.isEmpty()) {
+      return coverPath;
+    }
+    const thumbnail = image.resize({ width: 360, height: 540, quality: "good" });
+    await writeFile(fallbackPath, thumbnail.toJPEG(82));
+    return fallbackPath;
   }
-  const thumbnail = image.resize({ width: 360, height: 540, quality: "good" });
-  await writeFile(cachedPath, thumbnail.toPNG());
-  return cachedPath;
 }
 
 async function rebuildCoverCache(items: LibraryItem[]): Promise<LibraryItem[]> {
-  await rm(coverCachePath(), { recursive: true, force: true });
-  await mkdir(coverCachePath(), { recursive: true });
+  const cachePath = await activeCoverCachePath();
+  await rm(cachePath, { recursive: true, force: true });
+  await mkdir(cachePath, { recursive: true });
   const nextItems: LibraryItem[] = [];
   for (const item of items) {
     const sourceCover = item.coverPath && existsSync(item.coverPath) ? item.coverPath : item.pagePaths.find((pagePath) => existsSync(pagePath)) ?? null;
@@ -222,10 +236,11 @@ async function readSettings(): Promise<AppSettings> {
       detectedPlayers: await detectPlayers(),
       language: data.language ?? "zh",
       coverCacheEnabled: data.coverCacheEnabled ?? false,
+      coverCacheDirectory: data.coverCacheDirectory ?? null,
       highPerformanceMode: data.highPerformanceMode ?? false
     };
   } catch {
-    return { players: {}, detectedPlayers: await detectPlayers(), language: "zh", coverCacheEnabled: false, highPerformanceMode: false };
+    return { players: {}, detectedPlayers: await detectPlayers(), language: "zh", coverCacheEnabled: false, coverCacheDirectory: null, highPerformanceMode: false };
   }
 }
 
@@ -670,14 +685,9 @@ async function organizeComics(compressFolders: boolean): Promise<OrganizeResult>
 
         const cbzPath = await uniquePath(join(destinationRoot, categoryFolders.comic), `${sanitizeName(item.title)}.cbz`);
         await zipFolderToCbz(item.sourcePath, cbzPath);
+        const archiveItem = await createArchiveItem(cbzPath, item);
         await rm(item.sourcePath, { recursive: true, force: true });
-        nextItems.push({
-          ...item,
-          id: hash(`archive:${cbzPath}:${Date.now()}`),
-          sourceType: "archive",
-          sourcePath: cbzPath,
-          updatedAt: now()
-        });
+        nextItems.push(archiveItem ?? { ...item, sourceType: "archive", sourcePath: cbzPath, updatedAt: now() });
         compressed += 1;
       } else {
         const sourceInfo = await stat(item.sourcePath);
@@ -771,7 +781,7 @@ async function autoOrganizeFolder(): Promise<AutoOrganizeResult> {
   }
 
   await writeLibrary(nextItems);
-  return { moved, skipped, sourcePath: null, destinationPath: destinationRoot, categories: counts };
+  return { moved, skipped, sourcePath: null, destinationPath: destinationRoot, categories: counts, items: (await snapshot(nextItems)).items };
 }
 
 function emptyAutoOrganizeResult(sourcePath: string | null, destinationPath: string | null): AutoOrganizeResult {
@@ -780,7 +790,8 @@ function emptyAutoOrganizeResult(sourcePath: string | null, destinationPath: str
     skipped: 0,
     sourcePath,
     destinationPath,
-    categories: { comic: 0, image: 0, text: 0, audio: 0, video: 0, series: 0, archive: 0, other: 0 }
+    categories: { comic: 0, image: 0, text: 0, audio: 0, video: 0, series: 0, archive: 0, other: 0 },
+    items: []
   };
 }
 
@@ -1018,8 +1029,24 @@ app.whenReady().then(() => {
     return snapshot(await readLibrary());
   });
 
+  ipcMain.handle("settings:set-cover-cache-directory", async () => {
+    const selection = await dialog.showOpenDialog(mainWindow!, {
+      title: "Choose cover cache folder",
+      properties: ["openDirectory", "createDirectory"]
+    });
+    const settings = await readSettings();
+    if (!selection.canceled && selection.filePaths[0]) {
+      settings.coverCacheDirectory = resolve(selection.filePaths[0]);
+      settings.coverCacheEnabled = true;
+      await writeSettings(settings);
+      const items = await rebuildCoverCache(await readLibrary());
+      await writeLibrary(items);
+    }
+    return snapshot(await readLibrary());
+  });
+
   ipcMain.handle("settings:clear-cover-cache", async () => {
-    await rm(coverCachePath(), { recursive: true, force: true });
+    await rm(await activeCoverCachePath(), { recursive: true, force: true });
     const settings = await readSettings();
     settings.coverCacheEnabled = false;
     await writeSettings(settings);
