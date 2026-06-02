@@ -488,11 +488,26 @@ input[type="range"] {
   overflow: auto;
 }
 
+.display-paged .book-grid {
+  grid-template-rows: repeat(var(--grid-rows, 2), minmax(0, 1fr));
+  height: calc(100vh - 78px);
+  overflow: hidden;
+  gap: 18px;
+  padding: 22px;
+}
+
 .book-card {
   position: relative;
   min-width: 0;
   content-visibility: auto;
   contain-intrinsic-size: 300px 420px;
+}
+
+.display-paged .book-card {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .cover-button {
@@ -504,6 +519,12 @@ input[type="range"] {
   border-radius: 8px;
   background: #262b31;
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28);
+}
+
+.display-paged .cover-button {
+  height: 100%;
+  min-height: 0;
+  aspect-ratio: auto;
 }
 
 .cover-button img,
@@ -570,6 +591,10 @@ input[type="range"] {
 
 .book-meta {
   padding-top: 11px;
+}
+
+.display-paged .book-meta {
+  padding-top: 8px;
 }
 
 .meta-line {
@@ -859,11 +884,16 @@ input[type="range"] {
 }
 
 .page-hitbox {
-  position: absolute;
-  top: 0;
+  position: fixed;
+  top: 78px;
   bottom: 0;
+  z-index: 4;
   width: 28%;
   background: transparent;
+}
+
+.pure-reading .page-hitbox {
+  top: 0;
 }
 
 .page-hitbox.left {

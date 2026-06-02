@@ -400,6 +400,7 @@ function App(): JSX.Element {
     () => (window.localStorage.getItem("offline-library-display-mode") === "scroll" ? "scroll" : "paged")
   );
   const [selectedEpisodePath, setSelectedEpisodePath] = useState<string | null>(null);
+  const gridRef = useRef<HTMLDivElement | null>(null);
   const [, setProgressTick] = useState(0);
 
   const lang: AppLanguage = snapshot.settings.language ?? "zh";
@@ -435,7 +436,7 @@ function App(): JSX.Element {
     return [...new Set(snapshot.items.flatMap((item) => item.tags))].sort((a, b) => a.localeCompare(b));
   }, [snapshot.items]);
 
-  const rowsPerPage = displayMode === "paged" ? (snapshot.settings.highPerformanceMode ? 3 : 4) : snapshot.settings.highPerformanceMode ? 5 : 6;
+  const rowsPerPage = displayMode === "paged" ? 2 : snapshot.settings.highPerformanceMode ? 5 : 6;
   const pageSize = gridColumns * rowsPerPage;
   const pageCount = Math.max(1, Math.ceil(filteredItems.length / pageSize));
   const visibleItems = useMemo(() => {
@@ -443,6 +444,18 @@ function App(): JSX.Element {
     const start = (safePage - 1) * pageSize;
     return filteredItems.slice(start, start + pageSize);
   }, [filteredItems, page, pageCount, pageSize]);
+
+  useEffect(() => {
+    if (displayMode !== "paged") return;
+    const nextStart = page * pageSize;
+    const previousStart = Math.max(0, (page - 2) * pageSize);
+    const preloadItems = [...filteredItems.slice(previousStart, previousStart + pageSize), ...filteredItems.slice(nextStart, nextStart + pageSize)];
+    for (const item of preloadItems) {
+      if (!item.coverPath) continue;
+      const image = new Image();
+      image.src = window.comicShelf.assetUrl(item.coverPath);
+    }
+  }, [displayMode, filteredItems, page, pageSize]);
 
   useEffect(() => {
     setPage(1);
@@ -478,6 +491,34 @@ function App(): JSX.Element {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, select, textarea")) return;
+      if (viewMode === "grid") {
+        if (displayMode === "paged") {
+          if (event.key === "ArrowRight" || event.key === "PageDown" || event.key === " ") {
+            event.preventDefault();
+            setPage((value) => Math.min(pageCount, value + 1));
+          }
+          if (event.key === "ArrowLeft" || event.key === "PageUp") {
+            event.preventDefault();
+            setPage((value) => Math.max(1, value - 1));
+          }
+          return;
+        }
+
+        const grid = gridRef.current;
+        if (!grid) return;
+        if (event.key === "ArrowRight" || event.key === "ArrowDown" || event.key === "PageDown" || event.key === " ") {
+          event.preventDefault();
+          grid.scrollBy({ top: Math.max(320, grid.clientHeight * 0.82), behavior: "smooth" });
+        }
+        if (event.key === "ArrowLeft" || event.key === "ArrowUp" || event.key === "PageUp") {
+          event.preventDefault();
+          grid.scrollBy({ top: -Math.max(320, grid.clientHeight * 0.82), behavior: "smooth" });
+        }
+        return;
+      }
+
       if (!selectedItem || viewMode !== "reader") return;
       if (event.key === "ArrowRight" || event.key === " ") {
         event.preventDefault();
@@ -498,7 +539,7 @@ function App(): JSX.Element {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [pureReading, selectedItem, viewMode]);
+  }, [displayMode, pageCount, pureReading, selectedItem, viewMode]);
 
   useEffect(() => {
     if (!selectedItem || viewMode !== "viewer" || selectedItem.category !== "text") return;
@@ -939,7 +980,7 @@ function App(): JSX.Element {
               <p>{t.noContentHint}</p>
             </div>
           ) : (
-            <div className="book-grid" style={{ ["--grid-columns" as string]: String(gridColumns) }}>
+            <div ref={gridRef} className="book-grid" style={{ ["--grid-columns" as string]: String(gridColumns), ["--grid-rows" as string]: String(rowsPerPage) }}>
               {visibleItems.map((item) => (
                 <article className={`book-card category-${item.category}`} key={item.id}>
                   <button className="cover-button" onClick={() => void openItem(item)}>
