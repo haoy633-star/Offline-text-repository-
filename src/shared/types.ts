@@ -45,6 +45,14 @@ export interface ImportResult {
   items: LibraryItem[];
 }
 
+export interface OrganizeResult {
+  moved: number;
+  compressed: number;
+  skipped: number;
+  destinationPath: string | null;
+  items: LibraryItem[];
+}
+
 export interface LibrarySnapshot {
   items: LibraryItem[];
   stats: LibraryStats;

@@ -3,8 +3,8 @@ import { electronApp, optimizer } from "@electron-toolkit/utils";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
-import { basename, extname, join, parse, resolve } from "node:path";
+import { copyFile, cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { basename, dirname, extname, join, parse, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import JSZip from "jszip";
 import type {
@@ -13,7 +13,8 @@ import type {
   LibraryCategory,
   LibraryFile,
   LibraryItem,
-  LibrarySnapshot
+  LibrarySnapshot,
+  OrganizeResult
 } from "../shared/types";
 
 const imageExtensions = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".avif"]);
@@ -411,6 +412,133 @@ async function openWithPlayer(item: LibraryItem): Promise<void> {
   await shell.openPath(targetPath);
 }
 
+function sanitizeName(value: string): string {
+  return value.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").trim() || "Untitled";
+}
+
+async function uniquePath(folderPath: string, name: string): Promise<string> {
+  const parsed = parse(name);
+  let candidate = join(folderPath, name);
+  let index = 2;
+  while (existsSync(candidate)) {
+    candidate = join(folderPath, `${parsed.name} (${index})${parsed.ext}`);
+    index += 1;
+  }
+  return candidate;
+}
+
+async function movePath(sourcePath: string, destinationPath: string, recursive: boolean): Promise<void> {
+  await mkdir(dirname(destinationPath), { recursive: true });
+  try {
+    await rename(sourcePath, destinationPath);
+  } catch {
+    if (recursive) {
+      await cp(sourcePath, destinationPath, { recursive: true, force: true });
+      await rm(sourcePath, { recursive: true, force: true });
+    } else {
+      await copyFile(sourcePath, destinationPath);
+      await rm(sourcePath, { force: true });
+    }
+  }
+}
+
+async function zipFolderToCbz(folderPath: string, outputPath: string): Promise<void> {
+  const zip = new JSZip();
+  const files = await findFilesInFolder(folderPath);
+
+  for (const filePath of files) {
+    const archiveName = relative(folderPath, filePath).replace(/\\/g, "/");
+    zip.file(archiveName, await readFile(filePath));
+  }
+
+  await mkdir(dirname(outputPath), { recursive: true });
+  await writeFile(outputPath, await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }));
+}
+
+async function organizeComics(compressFolders: boolean): Promise<OrganizeResult> {
+  const selection = await dialog.showOpenDialog(mainWindow!, {
+    title: "Choose manga organization folder",
+    properties: ["openDirectory", "createDirectory"]
+  });
+
+  const current = await readLibrary();
+  if (selection.canceled || !selection.filePaths[0]) {
+    return { moved: 0, compressed: 0, skipped: 0, destinationPath: null, items: (await snapshot(current)).items };
+  }
+
+  const destinationRoot = resolve(selection.filePaths[0]);
+  await mkdir(destinationRoot, { recursive: true });
+
+  let moved = 0;
+  let compressed = 0;
+  let skipped = 0;
+  const nextItems: LibraryItem[] = [];
+
+  for (const item of current) {
+    if (item.category !== "comic" || !existsSync(item.sourcePath)) {
+      nextItems.push(item);
+      if (item.category === "comic") skipped += 1;
+      continue;
+    }
+
+    try {
+      if (compressFolders && item.sourceType === "folder") {
+        const cbzPath = await uniquePath(destinationRoot, `${sanitizeName(item.title)}.cbz`);
+        await zipFolderToCbz(item.sourcePath, cbzPath);
+        await rm(item.sourcePath, { recursive: true, force: true });
+        nextItems.push({
+          ...item,
+          id: hash(`archive:${cbzPath}:${Date.now()}`),
+          sourceType: "archive",
+          sourcePath: cbzPath,
+          updatedAt: now()
+        });
+        compressed += 1;
+      } else {
+        const sourceInfo = await stat(item.sourcePath);
+        const destinationPath = await uniquePath(destinationRoot, basename(item.sourcePath));
+        await movePath(item.sourcePath, destinationPath, sourceInfo.isDirectory());
+        const pagePaths =
+          item.sourceType === "folder"
+            ? item.pagePaths.map((pagePath) => join(destinationPath, relative(item.sourcePath, pagePath)))
+            : item.pagePaths;
+        nextItems.push({
+          ...item,
+          sourcePath: destinationPath,
+          coverPath:
+            item.coverPath && item.sourceType === "folder"
+              ? join(destinationPath, relative(item.sourcePath, item.coverPath))
+              : item.coverPath,
+          pagePaths,
+          files:
+            item.sourceType === "folder"
+              ? item.files.map((file) => ({ ...file, path: join(destinationPath, relative(item.sourcePath, file.path)) }))
+              : item.files.map((file) => (file.path === item.sourcePath ? { ...file, path: destinationPath } : file)),
+          updatedAt: now()
+        });
+        moved += 1;
+      }
+    } catch {
+      skipped += 1;
+      nextItems.push(item);
+    }
+  }
+
+  await writeLibrary(nextItems);
+  return { moved, compressed, skipped, destinationPath: destinationRoot, items: (await snapshot(nextItems)).items };
+}
+
+function relaunchAsAdmin(): void {
+  const exePath = process.execPath;
+  const args = app.isPackaged ? "" : `-ArgumentList '${process.argv.slice(1).join("','").replace(/'/g, "''")}'`;
+  spawn(
+    "powershell.exe",
+    ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", `Start-Process -FilePath '${exePath.replace(/'/g, "''")}' ${args} -Verb RunAs`],
+    { detached: true, stdio: "ignore" }
+  ).unref();
+  app.quit();
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -519,6 +647,14 @@ app.whenReady().then(() => {
       await openWithPlayer(item);
     }
     return snapshot(await readLibrary());
+  });
+
+  ipcMain.handle("library:organize-comics", async (_, compressFolders: boolean) => {
+    return organizeComics(compressFolders);
+  });
+
+  ipcMain.handle("app:relaunch-admin", async () => {
+    relaunchAsAdmin();
   });
 
   ipcMain.handle("library:remove", async (_, itemId: string) => {

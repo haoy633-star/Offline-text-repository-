@@ -15,6 +15,7 @@ import {
   Play,
   Search,
   Settings,
+  Shield,
   Star,
   Trash2,
   Video,
@@ -79,6 +80,7 @@ function App(): JSX.Element {
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [filter, setFilter] = useState<FilterKey>("all");
   const [busy, setBusy] = useState(false);
+  const [compressFolders, setCompressFolders] = useState(true);
   const [notice, setNotice] = useState("导入文件夹后会自动分类；视频、音频和文本会用外部程序打开。");
 
   const selectedItem = useMemo(
@@ -231,6 +233,23 @@ function App(): JSX.Element {
     setNotice(`${categoryLabel(category)}已恢复为 Windows 默认打开方式。`);
   }
 
+  async function organizeComics(): Promise<void> {
+    setBusy(true);
+    try {
+      const result = await window.comicShelf.organizeComics(compressFolders);
+      updateItems(result.items);
+      if (!result.destinationPath) {
+        setNotice("已取消整理漫画。");
+        return;
+      }
+      setNotice(
+        `整理完成：移动 ${result.moved} 项，压缩 ${result.compressed} 项，跳过 ${result.skipped} 项。目标：${result.destinationPath}`
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function playerText(settings: AppSettings, category: LibraryCategory): string {
     return settings.players[category] ? fileName(settings.players[category]!) : "Windows 默认";
   }
@@ -309,6 +328,29 @@ function App(): JSX.Element {
                 </button>
               </div>
             ))}
+        </section>
+
+        <section className="organize-panel">
+          <div className="settings-title">
+            <Shield size={16} />
+            <span>管理员整理</span>
+          </div>
+          <label className="check-row">
+            <input
+              type="checkbox"
+              checked={compressFolders}
+              onChange={(event) => setCompressFolders(event.target.checked)}
+            />
+            <span>文件夹漫画压缩为 CBZ</span>
+          </label>
+          <button className="admin-button" onClick={() => void window.comicShelf.relaunchAsAdmin()} disabled={busy}>
+            <Shield size={16} />
+            <span>管理员模式重启</span>
+          </button>
+          <button className="organize-button" onClick={() => void organizeComics()} disabled={busy}>
+            <FolderOpen size={16} />
+            <span>整理已导入漫画</span>
+          </button>
         </section>
 
         <p className="notice">{notice}</p>

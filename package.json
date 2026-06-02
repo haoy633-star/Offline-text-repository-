@@ -1,7 +1,7 @@
 {
   "name": "offline-comic-shelf",
   "version": "0.1.0",
-  "description": "A local-first offline comic library and reader for Windows.",
+    "description": "A local-first offline media library and comic organizer for Windows.",
   "main": "out/main/index.js",
   "author": "haoy633-star",
   "license": "MIT",
@@ -32,7 +32,7 @@
   },
   "build": {
     "appId": "io.github.haoy633star.offlinecomicshelf",
-    "productName": "Offline Comic Shelf",
+    "productName": "Offline Library",
     "directories": {
       "output": "release"
     },
@@ -41,7 +41,18 @@
       "package.json"
     ],
     "win": {
-      "target": "nsis"
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "requestedExecutionLevel": "asInvoker",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "artifactName": "${productName}-${version}-${arch}-Setup.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-${arch}-Portable.${ext}"
     }
   }
 }
