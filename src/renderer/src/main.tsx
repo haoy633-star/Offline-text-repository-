@@ -115,6 +115,9 @@ const copy = {
     sortRecent: "最近打开",
     editTags: "编辑标签",
     tagPrompt: "输入标签，用逗号分隔",
+    tagEditor: "编辑标签",
+    save: "保存",
+    cancel: "取消",
     allTags: "全部标签",
     coverCache: "封面缓存",
     enableCache: "启用封面缓存",
@@ -212,6 +215,9 @@ const copy = {
     sortRecent: "Recently opened",
     editTags: "Edit tags",
     tagPrompt: "Enter tags separated by commas",
+    tagEditor: "Edit tags",
+    save: "Save",
+    cancel: "Cancel",
     allTags: "All tags",
     coverCache: "Cover cache",
     enableCache: "Enable cover cache",
@@ -323,6 +329,8 @@ function App(): JSX.Element {
   const [fullscreen, setFullscreen] = useState(false);
   const [textContent, setTextContent] = useState("");
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
+  const [tagEditorItem, setTagEditorItem] = useState<LibraryItem | null>(null);
+  const [tagDraft, setTagDraft] = useState("");
   const [, setProgressTick] = useState(0);
 
   const lang: AppLanguage = snapshot.settings.language ?? "zh";
@@ -495,6 +503,20 @@ function App(): JSX.Element {
     const data = await window.comicShelf.toggleFavorite(item.id);
     setSnapshot(data);
     setNotice(item.favorite ? t.unfavorited : t.favorited);
+  }
+
+  function openTagEditor(item: LibraryItem): void {
+    setTagEditorItem(item);
+    setTagDraft(item.tags.join(", "));
+  }
+
+  async function saveTags(): Promise<void> {
+    if (!tagEditorItem) return;
+    const tags = tagDraft.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean);
+    const next = await window.comicShelf.updateTags(tagEditorItem.id, tags);
+    setSnapshot(next);
+    setTagEditorItem(null);
+    setTagDraft("");
   }
 
   async function editTags(item: LibraryItem): Promise<void> {
@@ -855,7 +877,7 @@ function App(): JSX.Element {
                     <button title={t.externalOpen} onClick={() => void openExternal(item)}>
                       <Maximize2 size={16} />
                     </button>
-                    <button title={t.editTags} onClick={() => void editTags(item)}>
+                    <button title={t.editTags} onClick={() => openTagEditor(item)}>
                       <Tags size={16} />
                     </button>
                     <button title={t.reveal} onClick={() => void window.comicShelf.revealInExplorer(item.sourcePath)}>
@@ -1007,6 +1029,22 @@ function App(): JSX.Element {
               <span>
                 {t.remaining}: {formatSeconds(estimatedRemaining(importProgress))}
               </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tagEditorItem && (
+        <div className="modal-overlay" role="dialog" aria-modal="true">
+          <div className="tag-editor">
+            <h2>{t.tagEditor}</h2>
+            <p>{tagEditorItem.title}</p>
+            <textarea value={tagDraft} onChange={(event) => setTagDraft(event.target.value)} placeholder={t.tagPrompt} autoFocus />
+            <div className="modal-actions">
+              <button onClick={() => setTagEditorItem(null)}>{t.cancel}</button>
+              <button className="primary" onClick={() => void saveTags()}>
+                {t.save}
+              </button>
             </div>
           </div>
         </div>

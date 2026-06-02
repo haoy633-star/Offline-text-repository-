@@ -624,6 +624,7 @@ input[type="range"] {
   position: absolute;
   top: 8px;
   right: 8px;
+  z-index: 3;
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
@@ -643,6 +644,79 @@ input[type="range"] {
   min-height: 34px;
   background: rgba(13, 14, 16, 0.78);
   backdrop-filter: blur(10px);
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(8, 9, 10, 0.68);
+  backdrop-filter: blur(8px);
+}
+
+.tag-editor {
+  width: min(540px, 100%);
+  padding: 22px;
+  border: 1px solid rgba(242, 179, 93, 0.24);
+  border-radius: 8px;
+  background: #17191c;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.46);
+}
+
+.tag-editor h2,
+.tag-editor p {
+  margin: 0;
+}
+
+.tag-editor h2 {
+  color: #fff6e6;
+  font-size: 20px;
+}
+
+.tag-editor p {
+  margin-top: 8px;
+  overflow: hidden;
+  color: #a8b0b8;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-editor textarea {
+  width: 100%;
+  min-height: 110px;
+  margin-top: 16px;
+  padding: 12px;
+  resize: vertical;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  outline: 0;
+  background: #101214;
+  color: #f6f2ea;
+  line-height: 1.5;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.modal-actions button {
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 8px;
+  background: #2b3036;
+  color: #f6f2ea;
+}
+
+.modal-actions button.primary {
+  background: #d98f39;
+  color: #15120f;
+  font-weight: 720;
 }
 
 .empty-state {
