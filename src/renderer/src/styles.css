@@ -128,7 +128,9 @@ button:disabled {
 }
 
 .actions button,
+.filters button,
 .reader-bar button,
+.player-row button,
 .book-tools button {
   display: inline-flex;
   align-items: center;
@@ -154,6 +156,80 @@ button:disabled {
 
 .actions button:first-child:hover {
   background: #eca14b;
+}
+
+.filters {
+  display: grid;
+  gap: 6px;
+}
+
+.filters button {
+  justify-content: start;
+  min-height: 36px;
+  padding: 0 10px;
+  background: transparent;
+  color: #c4cbd2;
+}
+
+.filters button:hover,
+.filters button.active {
+  background: #242a31;
+  color: #fff6e6;
+}
+
+.filters button strong {
+  margin-left: auto;
+  color: #f2b35d;
+  font-size: 12px;
+}
+
+.player-settings {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  background: #20242a;
+}
+
+.settings-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #fff6e6;
+  font-size: 13px;
+  font-weight: 720;
+}
+
+.player-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 28px 28px;
+  align-items: center;
+  gap: 6px;
+}
+
+.player-row span,
+.player-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-row span {
+  color: #dbe1e7;
+  font-size: 12px;
+}
+
+.player-row small {
+  color: #8f99a5;
+  font-size: 11px;
+}
+
+.player-row button {
+  min-height: 28px;
+  border-radius: 6px;
+  background: #2b3036;
+  color: #cbd3dc;
 }
 
 .stats {
@@ -231,6 +307,7 @@ button:disabled {
 }
 
 .cover-button {
+  position: relative;
   display: block;
   width: 100%;
   aspect-ratio: 2 / 3;
@@ -264,8 +341,42 @@ button:disabled {
   color: #78828f;
 }
 
+.category-text .missing-cover {
+  color: #8cc4ff;
+}
+
+.category-audio .missing-cover {
+  color: #8fd6a4;
+}
+
+.category-video .missing-cover {
+  color: #f3a6a6;
+}
+
+.category-archive .missing-cover {
+  color: #d9bbff;
+}
+
+.favorite-badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  color: #f2b35d;
+  filter: drop-shadow(0 3px 7px rgba(0, 0, 0, 0.5));
+}
+
 .book-meta {
   padding-top: 11px;
+}
+
+.meta-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 5px;
+  color: #a8b0b8;
+  font-size: 12px;
 }
 
 .book-meta h3 {
@@ -287,6 +398,9 @@ button:disabled {
   top: 8px;
   right: 8px;
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 88px;
   gap: 6px;
   opacity: 0;
   transition: opacity 160ms ease;

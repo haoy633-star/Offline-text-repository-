@@ -1,15 +1,27 @@
 import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from "electron";
 import { electronApp, optimizer } from "@electron-toolkit/utils";
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
-import { extname, join, parse, resolve } from "node:path";
+import { basename, extname, join, parse, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import JSZip from "jszip";
-import type { ComicBook, ImportResult, LibrarySnapshot } from "../shared/types";
+import type {
+  AppSettings,
+  ImportResult,
+  LibraryCategory,
+  LibraryFile,
+  LibraryItem,
+  LibrarySnapshot
+} from "../shared/types";
 
 const imageExtensions = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".avif"]);
+const textExtensions = new Set([".txt", ".md", ".markdown", ".pdf", ".epub", ".mobi", ".azw3", ".doc", ".docx"]);
+const audioExtensions = new Set([".mp3", ".flac", ".wav", ".m4a", ".aac", ".ogg", ".opus"]);
+const videoExtensions = new Set([".mp4", ".mkv", ".avi", ".mov", ".wmv", ".webm", ".m4v"]);
 const archiveExtensions = new Set([".cbz", ".zip"]);
+const playableCategories = new Set<LibraryCategory>(["text", "audio", "video", "archive", "other"]);
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -29,6 +41,10 @@ function libraryPath(): string {
   return join(app.getPath("userData"), "library.json");
 }
 
+function settingsPath(): string {
+  return join(app.getPath("userData"), "settings.json");
+}
+
 function importCachePath(): string {
   return join(app.getPath("userData"), "imports");
 }
@@ -45,9 +61,19 @@ function naturalCompare(a: string, b: string): number {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
 }
 
-function normalizeBookTitle(filePath: string): string {
+function titleFromPath(filePath: string): string {
   const parsed = parse(filePath);
   return parsed.name || parsed.base;
+}
+
+function categoryForExtension(filePath: string): LibraryCategory {
+  const extension = extname(filePath).toLowerCase();
+  if (imageExtensions.has(extension)) return "comic";
+  if (textExtensions.has(extension)) return "text";
+  if (audioExtensions.has(extension)) return "audio";
+  if (videoExtensions.has(extension)) return "video";
+  if (archiveExtensions.has(extension)) return "archive";
+  return "other";
 }
 
 function isImage(filePath: string): boolean {
@@ -58,38 +84,105 @@ function isArchive(filePath: string): boolean {
   return archiveExtensions.has(extname(filePath).toLowerCase());
 }
 
-async function readLibrary(): Promise<ComicBook[]> {
+function toLibraryFile(filePath: string): LibraryFile {
+  return {
+    path: filePath,
+    name: basename(filePath),
+    extension: extname(filePath).toLowerCase(),
+    category: categoryForExtension(filePath)
+  };
+}
+
+async function readSettings(): Promise<AppSettings> {
+  try {
+    const raw = await readFile(settingsPath(), "utf8");
+    const data = JSON.parse(raw) as AppSettings;
+    return { players: data.players ?? {} };
+  } catch {
+    return { players: {} };
+  }
+}
+
+async function writeSettings(settings: AppSettings): Promise<void> {
+  await mkdir(app.getPath("userData"), { recursive: true });
+  await writeFile(settingsPath(), JSON.stringify(settings, null, 2), "utf8");
+}
+
+function migrateItem(raw: Partial<Omit<LibraryItem, "sourceType">> & { sourceType?: string }): LibraryItem | null {
+  if (!raw.id || !raw.title || !raw.sourcePath) {
+    return null;
+  }
+
+  const sourceType = raw.sourceType === "cbz" ? "archive" : (raw.sourceType as LibraryItem["sourceType"]) || "file";
+  const pagePaths = raw.pagePaths ?? [];
+  const category = raw.category ?? (pagePaths.length > 0 ? "comic" : categoryForExtension(raw.sourcePath));
+
+  return {
+    id: raw.id,
+    title: raw.title,
+    sourceType,
+    sourcePath: raw.sourcePath,
+    category,
+    coverPath: raw.coverPath ?? null,
+    pagePaths,
+    pageCount: raw.pageCount ?? pagePaths.length,
+    files: raw.files ?? pagePaths.map(toLibraryFile),
+    addedAt: raw.addedAt ?? now(),
+    updatedAt: raw.updatedAt ?? now(),
+    lastOpenedAt: raw.lastOpenedAt ?? null,
+    currentPage: raw.currentPage ?? 0,
+    favorite: raw.favorite ?? false
+  };
+}
+
+async function readLibrary(): Promise<LibraryItem[]> {
   try {
     const raw = await readFile(libraryPath(), "utf8");
-    const data = JSON.parse(raw) as ComicBook[];
-    return Array.isArray(data) ? data : [];
+    const data = JSON.parse(raw) as Array<Partial<LibraryItem>>;
+    return Array.isArray(data) ? data.map(migrateItem).filter((item): item is LibraryItem => Boolean(item)) : [];
   } catch {
     return [];
   }
 }
 
-async function writeLibrary(books: ComicBook[]): Promise<void> {
+async function writeLibrary(items: LibraryItem[]): Promise<void> {
   await mkdir(app.getPath("userData"), { recursive: true });
-  await writeFile(libraryPath(), JSON.stringify(books, null, 2), "utf8");
+  await writeFile(libraryPath(), JSON.stringify(items, null, 2), "utf8");
 }
 
-function snapshot(books: ComicBook[]): LibrarySnapshot {
-  const sorted = [...books].sort((a, b) => {
+async function snapshot(items: LibraryItem[]): Promise<LibrarySnapshot> {
+  const sorted = [...items].sort((a, b) => {
+    if (a.favorite !== b.favorite) return Number(b.favorite) - Number(a.favorite);
     const aTime = a.lastOpenedAt ?? a.addedAt;
     const bTime = b.lastOpenedAt ?? b.addedAt;
     return bTime.localeCompare(aTime);
   });
+  const categories: Record<LibraryCategory, number> = {
+    comic: 0,
+    text: 0,
+    audio: 0,
+    video: 0,
+    archive: 0,
+    other: 0
+  };
+
+  for (const item of sorted) {
+    categories[item.category] += 1;
+  }
 
   return {
-    books: sorted,
+    items: sorted,
     stats: {
-      books: sorted.length,
-      pages: sorted.reduce((total, book) => total + book.pageCount, 0)
-    }
+      items: sorted.length,
+      favorites: sorted.filter((item) => item.favorite).length,
+      pages: sorted.reduce((total, item) => total + item.pageCount, 0),
+      categories
+    },
+    settings: await readSettings()
   };
 }
 
-async function findImagesInFolder(folderPath: string): Promise<string[]> {
+async function findFilesInFolder(folderPath: string): Promise<string[]> {
   const result: string[] = [];
 
   async function walk(currentPath: string): Promise<void> {
@@ -99,7 +192,7 @@ async function findImagesInFolder(folderPath: string): Promise<string[]> {
         const entryPath = join(currentPath, entry.name);
         if (entry.isDirectory()) {
           await walk(entryPath);
-        } else if (entry.isFile() && isImage(entryPath)) {
+        } else if (entry.isFile()) {
           result.push(entryPath);
         }
       })
@@ -110,9 +203,10 @@ async function findImagesInFolder(folderPath: string): Promise<string[]> {
   return result.sort(naturalCompare);
 }
 
-async function importFolder(folderPath: string, existing: ComicBook | undefined): Promise<ComicBook | null> {
+async function createComicFolderItem(folderPath: string, existing: LibraryItem | undefined): Promise<LibraryItem | null> {
   const absolutePath = resolve(folderPath);
-  const pagePaths = await findImagesInFolder(absolutePath);
+  const files = await findFilesInFolder(absolutePath);
+  const pagePaths = files.filter(isImage);
   if (pagePaths.length === 0) {
     return null;
   }
@@ -120,20 +214,72 @@ async function importFolder(folderPath: string, existing: ComicBook | undefined)
   const timestamp = now();
   return {
     id: hash(`folder:${absolutePath}`),
-    title: normalizeBookTitle(absolutePath),
+    title: titleFromPath(absolutePath),
     sourceType: "folder",
     sourcePath: absolutePath,
+    category: "comic",
     coverPath: pagePaths[0],
     pagePaths,
     pageCount: pagePaths.length,
+    files: pagePaths.map(toLibraryFile),
     addedAt: existing?.addedAt ?? timestamp,
     updatedAt: timestamp,
     lastOpenedAt: existing?.lastOpenedAt ?? null,
-    currentPage: Math.min(existing?.currentPage ?? 0, pagePaths.length - 1)
+    currentPage: Math.min(existing?.currentPage ?? 0, pagePaths.length - 1),
+    favorite: existing?.favorite ?? false
   };
 }
 
-async function importArchive(archivePath: string, existing: ComicBook | undefined): Promise<ComicBook | null> {
+function createComicItemFromPages(folderPath: string, pagePaths: string[], existing: LibraryItem | undefined): LibraryItem | null {
+  const absolutePath = resolve(folderPath);
+  const sortedPages = [...pagePaths].sort(naturalCompare);
+  if (sortedPages.length === 0) {
+    return null;
+  }
+
+  const timestamp = now();
+  return {
+    id: hash(`folder:${absolutePath}:loose-images`),
+    title: titleFromPath(absolutePath),
+    sourceType: "folder",
+    sourcePath: absolutePath,
+    category: "comic",
+    coverPath: sortedPages[0],
+    pagePaths: sortedPages,
+    pageCount: sortedPages.length,
+    files: sortedPages.map(toLibraryFile),
+    addedAt: existing?.addedAt ?? timestamp,
+    updatedAt: timestamp,
+    lastOpenedAt: existing?.lastOpenedAt ?? null,
+    currentPage: Math.min(existing?.currentPage ?? 0, sortedPages.length - 1),
+    favorite: existing?.favorite ?? false
+  };
+}
+
+async function createFileItem(filePath: string, existing: LibraryItem | undefined): Promise<LibraryItem> {
+  const absolutePath = resolve(filePath);
+  const timestamp = now();
+  const file = toLibraryFile(absolutePath);
+
+  return {
+    id: hash(`file:${absolutePath}`),
+    title: titleFromPath(absolutePath),
+    sourceType: "file",
+    sourcePath: absolutePath,
+    category: file.category,
+    coverPath: file.category === "comic" ? absolutePath : null,
+    pagePaths: file.category === "comic" ? [absolutePath] : [],
+    pageCount: file.category === "comic" ? 1 : 0,
+    files: [file],
+    addedAt: existing?.addedAt ?? timestamp,
+    updatedAt: timestamp,
+    lastOpenedAt: existing?.lastOpenedAt ?? null,
+    currentPage: 0,
+    favorite: existing?.favorite ?? false
+  };
+}
+
+async function createArchiveItem(archivePath: string, existing: LibraryItem | undefined): Promise<LibraryItem | null> {
   const absolutePath = resolve(archivePath);
   const archiveStat = await stat(absolutePath);
   const id = hash(`archive:${absolutePath}:${archiveStat.mtimeMs}`);
@@ -144,7 +290,7 @@ async function importArchive(archivePath: string, existing: ComicBook | undefine
     .sort((a, b) => naturalCompare(a.name, b.name));
 
   if (imageEntries.length === 0) {
-    return null;
+    return createFileItem(absolutePath, existing);
   }
 
   await rm(outputDir, { recursive: true, force: true });
@@ -162,43 +308,107 @@ async function importArchive(archivePath: string, existing: ComicBook | undefine
   const timestamp = now();
   return {
     id,
-    title: normalizeBookTitle(absolutePath),
-    sourceType: "cbz",
+    title: titleFromPath(absolutePath),
+    sourceType: "archive",
     sourcePath: absolutePath,
+    category: "comic",
     coverPath: pagePaths[0],
     pagePaths,
     pageCount: pagePaths.length,
+    files: pagePaths.map(toLibraryFile),
     addedAt: existing?.addedAt ?? timestamp,
     updatedAt: timestamp,
     lastOpenedAt: existing?.lastOpenedAt ?? null,
-    currentPage: Math.min(existing?.currentPage ?? 0, pagePaths.length - 1)
+    currentPage: Math.min(existing?.currentPage ?? 0, pagePaths.length - 1),
+    favorite: existing?.favorite ?? false
   };
 }
 
-async function mergeImports(imports: Array<ComicBook | null>): Promise<ImportResult> {
+async function createItemsFromFolder(rootPath: string, existingItems: LibraryItem[]): Promise<Array<LibraryItem | null>> {
+  const absoluteRoot = resolve(rootPath);
+  const entries = await readdir(absoluteRoot, { withFileTypes: true });
+  const currentById = new Map(existingItems.map((item) => [item.id, item]));
+  const result: Array<LibraryItem | null> = [];
+  const looseFiles: string[] = [];
+
+  for (const entry of entries) {
+    const entryPath = join(absoluteRoot, entry.name);
+    if (entry.isDirectory()) {
+      const files = await findFilesInFolder(entryPath);
+      const imageCount = files.filter(isImage).length;
+      if (imageCount >= Math.max(2, files.length * 0.5)) {
+        result.push(await createComicFolderItem(entryPath, currentById.get(hash(`folder:${resolve(entryPath)}`))));
+      } else {
+        for (const filePath of files) {
+          result.push(await createFileItem(filePath, currentById.get(hash(`file:${resolve(filePath)}`))));
+        }
+      }
+    } else if (entry.isFile()) {
+      looseFiles.push(entryPath);
+    }
+  }
+
+  const rootImages = looseFiles.filter(isImage);
+  if (rootImages.length >= 2 && rootImages.length >= looseFiles.length * 0.5) {
+    result.push(createComicItemFromPages(absoluteRoot, rootImages, currentById.get(hash(`folder:${absoluteRoot}:loose-images`))));
+  } else {
+    for (const filePath of looseFiles) {
+      if (isArchive(filePath)) {
+        result.push(await createArchiveItem(filePath, existingItems.find((item) => item.sourcePath === resolve(filePath))));
+      } else {
+        result.push(await createFileItem(filePath, currentById.get(hash(`file:${resolve(filePath)}`))));
+      }
+    }
+  }
+
+  return result;
+}
+
+async function mergeImports(imports: Array<LibraryItem | null>): Promise<ImportResult> {
   const current = await readLibrary();
-  const byId = new Map(current.map((book) => [book.id, book]));
+  const byId = new Map(current.map((item) => [item.id, item]));
   let added = 0;
   let updated = 0;
   let skipped = 0;
 
-  for (const book of imports) {
-    if (!book) {
+  for (const item of imports) {
+    if (!item) {
       skipped += 1;
       continue;
     }
 
-    if (byId.has(book.id)) {
+    if (byId.has(item.id)) {
       updated += 1;
     } else {
       added += 1;
     }
-    byId.set(book.id, book);
+    byId.set(item.id, item);
   }
 
-  const books = [...byId.values()];
-  await writeLibrary(books);
-  return { added, updated, skipped, books: snapshot(books).books };
+  const items = [...byId.values()];
+  await writeLibrary(items);
+  return { added, updated, skipped, items: (await snapshot(items)).items };
+}
+
+async function openWithPlayer(item: LibraryItem): Promise<void> {
+  const settings = await readSettings();
+  const targetPath = item.sourceType === "archive" && item.category === "comic" ? item.sourcePath : item.sourcePath;
+  const customPlayer = settings.players[item.category];
+
+  item.lastOpenedAt = now();
+  const items = await readLibrary();
+  await writeLibrary(items.map((entry) => (entry.id === item.id ? item : entry)));
+
+  if (customPlayer && existsSync(customPlayer) && playableCategories.has(item.category)) {
+    const child = spawn(customPlayer, [targetPath], {
+      detached: true,
+      stdio: "ignore"
+    });
+    child.unref();
+    return;
+  }
+
+  await shell.openPath(targetPath);
 }
 
 function createWindow(): void {
@@ -242,61 +452,105 @@ app.whenReady().then(() => {
 
   ipcMain.handle("library:import-folders", async () => {
     const selection = await dialog.showOpenDialog(mainWindow!, {
-      title: "Import comic folders",
+      title: "Import folders",
       properties: ["openDirectory", "multiSelections"]
     });
     if (selection.canceled) {
-      return { added: 0, updated: 0, skipped: 0, books: snapshot(await readLibrary()).books };
+      const current = await readLibrary();
+      return { added: 0, updated: 0, skipped: 0, items: (await snapshot(current)).items };
     }
 
     const current = await readLibrary();
-    const currentById = new Map(current.map((book) => [book.id, book]));
-    const imports = await Promise.all(
-      selection.filePaths.map((folderPath) => importFolder(folderPath, currentById.get(hash(`folder:${resolve(folderPath)}`))))
-    );
+    const imports: Array<LibraryItem | null> = [];
+    for (const folderPath of selection.filePaths) {
+      imports.push(...(await createItemsFromFolder(folderPath, current)));
+    }
     return mergeImports(imports);
   });
 
   ipcMain.handle("library:import-archives", async () => {
     const selection = await dialog.showOpenDialog(mainWindow!, {
-      title: "Import CBZ archives",
-      filters: [{ name: "Comic Book Zip", extensions: ["cbz", "zip"] }],
+      title: "Import CBZ or ZIP archives",
+      filters: [{ name: "Archives", extensions: ["cbz", "zip"] }],
       properties: ["openFile", "multiSelections"]
     });
     if (selection.canceled) {
-      return { added: 0, updated: 0, skipped: 0, books: snapshot(await readLibrary()).books };
+      const current = await readLibrary();
+      return { added: 0, updated: 0, skipped: 0, items: (await snapshot(current)).items };
     }
 
     const current = await readLibrary();
-    const currentBySource = new Map(current.map((book) => [book.sourcePath, book]));
+    const currentBySource = new Map(current.map((item) => [item.sourcePath, item]));
     const imports = await Promise.all(
-      selection.filePaths.filter(isArchive).map((archivePath) => importArchive(archivePath, currentBySource.get(resolve(archivePath))))
+      selection.filePaths.filter(isArchive).map((archivePath) => createArchiveItem(archivePath, currentBySource.get(resolve(archivePath))))
     );
     return mergeImports(imports);
   });
 
-  ipcMain.handle("library:update-progress", async (_, bookId: string, page: number) => {
-    const books = await readLibrary();
-    const book = books.find((item) => item.id === bookId);
-    if (!book) {
+  ipcMain.handle("library:update-progress", async (_, itemId: string, page: number) => {
+    const items = await readLibrary();
+    const item = items.find((entry) => entry.id === itemId);
+    if (!item) {
       return null;
     }
 
-    book.currentPage = Math.max(0, Math.min(page, book.pageCount - 1));
-    book.lastOpenedAt = now();
-    await writeLibrary(books);
-    return book;
+    item.currentPage = Math.max(0, Math.min(page, item.pageCount - 1));
+    item.lastOpenedAt = now();
+    await writeLibrary(items);
+    return item;
   });
 
-  ipcMain.handle("library:remove", async (_, bookId: string) => {
-    const books = await readLibrary();
-    const removed = books.find((book) => book.id === bookId);
-    const nextBooks = books.filter((book) => book.id !== bookId);
-    if (removed?.sourceType === "cbz") {
+  ipcMain.handle("library:toggle-favorite", async (_, itemId: string) => {
+    const items = await readLibrary();
+    const item = items.find((entry) => entry.id === itemId);
+    if (!item) {
+      return snapshot(items);
+    }
+    item.favorite = !item.favorite;
+    item.updatedAt = now();
+    await writeLibrary(items);
+    return snapshot(items);
+  });
+
+  ipcMain.handle("library:open-external", async (_, itemId: string) => {
+    const items = await readLibrary();
+    const item = items.find((entry) => entry.id === itemId);
+    if (item) {
+      await openWithPlayer(item);
+    }
+    return snapshot(await readLibrary());
+  });
+
+  ipcMain.handle("library:remove", async (_, itemId: string) => {
+    const items = await readLibrary();
+    const removed = items.find((item) => item.id === itemId);
+    const nextItems = items.filter((item) => item.id !== itemId);
+    if (removed?.sourceType === "archive" && removed.category === "comic") {
       await rm(join(importCachePath(), removed.id), { recursive: true, force: true });
     }
-    await writeLibrary(nextBooks);
-    return snapshot(nextBooks);
+    await writeLibrary(nextItems);
+    return snapshot(nextItems);
+  });
+
+  ipcMain.handle("settings:set-player", async (_, category: LibraryCategory) => {
+    const selection = await dialog.showOpenDialog(mainWindow!, {
+      title: `Choose ${category} player`,
+      filters: [{ name: "Programs", extensions: ["exe", "bat", "cmd"] }],
+      properties: ["openFile"]
+    });
+    const settings = await readSettings();
+    if (!selection.canceled && selection.filePaths[0]) {
+      settings.players[category] = selection.filePaths[0];
+      await writeSettings(settings);
+    }
+    return settings;
+  });
+
+  ipcMain.handle("settings:clear-player", async (_, category: LibraryCategory) => {
+    const settings = await readSettings();
+    delete settings.players[category];
+    await writeSettings(settings);
+    return settings;
   });
 
   ipcMain.handle("file:reveal", async (_, filePath: string) => {
