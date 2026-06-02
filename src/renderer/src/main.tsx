@@ -46,7 +46,7 @@ type ViewMode = "grid" | "reader" | "viewer" | "help";
 type FilterKey = "all" | "favorite" | LibraryCategory;
 type FitMode = "page" | "width" | "actual";
 
-const categoryKeys: LibraryCategory[] = ["comic", "image", "text", "audio", "video", "archive", "other"];
+const categoryKeys: LibraryCategory[] = ["comic", "image", "text", "audio", "video", "series", "archive", "other"];
 
 const copy = {
   zh: {
@@ -145,6 +145,7 @@ const copy = {
       text: "文本",
       audio: "音频",
       video: "视频",
+      series: "电视剧",
       archive: "压缩包",
       other: "其它"
     }
@@ -245,6 +246,7 @@ const copy = {
       text: "Text",
       audio: "Audio",
       video: "Video",
+      series: "Series",
       archive: "Archives",
       other: "Other"
     }
@@ -258,7 +260,7 @@ function defaultSnapshot(): LibrarySnapshot {
       items: 0,
       favorites: 0,
       pages: 0,
-      categories: { comic: 0, image: 0, text: 0, audio: 0, video: 0, archive: 0, other: 0 }
+      categories: { comic: 0, image: 0, text: 0, audio: 0, video: 0, series: 0, archive: 0, other: 0 }
     },
     settings: { players: {}, detectedPlayers: {}, language: "zh", coverCacheEnabled: false, highPerformanceMode: false }
   };
@@ -274,6 +276,7 @@ function CategoryIcon({ category, size = 28 }: { category: LibraryCategory; size
   if (category === "text") return <FileText size={size} />;
   if (category === "audio") return <Music size={size} />;
   if (category === "video") return <Video size={size} />;
+  if (category === "series") return <Video size={size} />;
   if (category === "archive") return <FileArchive size={size} />;
   return <FolderOpen size={size} />;
 }
@@ -289,7 +292,7 @@ function statFromItems(items: LibraryItem[]): LibrarySnapshot["stats"] {
     pages: items.reduce((sum, item) => sum + item.pageCount, 0),
     categories: categoryKeys.reduce(
       (result, category) => ({ ...result, [category]: items.filter((item) => item.category === category).length }),
-      { comic: 0, image: 0, text: 0, audio: 0, video: 0, archive: 0, other: 0 } as Record<LibraryCategory, number>
+      { comic: 0, image: 0, text: 0, audio: 0, video: 0, series: 0, archive: 0, other: 0 } as Record<LibraryCategory, number>
     )
   };
 }
@@ -365,7 +368,7 @@ function App(): JSX.Element {
     return [...new Set(snapshot.items.flatMap((item) => item.tags))].sort((a, b) => a.localeCompare(b));
   }, [snapshot.items]);
 
-  const pageSize = snapshot.settings.highPerformanceMode ? 360 : 160;
+  const pageSize = snapshot.settings.highPerformanceMode ? 96 : 72;
   const pageCount = Math.max(1, Math.ceil(filteredItems.length / pageSize));
   const visibleItems = useMemo(() => {
     const safePage = Math.min(page, pageCount);
@@ -841,8 +844,10 @@ function App(): JSX.Element {
                   <button className="cover-button" onClick={() => void openItem(item)}>
                     {item.coverPath ? (
                       <img src={window.comicShelf.assetUrl(item.coverPath)} alt={item.title} loading="lazy" />
-                    ) : item.category === "video" ? (
-                      <video className="cover-video" src={window.comicShelf.assetUrl(item.sourcePath)} preload="metadata" muted />
+                    ) : item.category === "video" || item.category === "series" ? (
+                      <div className="missing-cover video-cover">
+                        <Video size={38} />
+                      </div>
                     ) : (
                       <div className="missing-cover">
                         <CategoryIcon category={item.category} size={38} />
@@ -919,7 +924,7 @@ function App(): JSX.Element {
               <X size={19} />
             </button>
             <div>
-              <h2>{selectedItem.title}</h2>
+              <h2 title={selectedItem.title}>{selectedItem.title}</h2>
               <p>{t.internalViewer}</p>
             </div>
             <button onClick={() => void openExternal(selectedItem)}>
@@ -929,9 +934,18 @@ function App(): JSX.Element {
           </header>
           <div className="internal-viewer">
             {selectedItem.category === "video" && <video src={window.comicShelf.assetUrl(selectedItem.sourcePath)} controls />}
+            {selectedItem.category === "series" && (
+              <div className="episode-list">
+                {selectedItem.files.map((file) => (
+                  <button key={file.path} onClick={() => void window.comicShelf.revealInExplorer(file.path)}>
+                    {file.name}
+                  </button>
+                ))}
+              </div>
+            )}
             {selectedItem.category === "audio" && <audio src={window.comicShelf.assetUrl(selectedItem.sourcePath)} controls />}
             {selectedItem.category === "text" && <pre>{textContent}</pre>}
-            {!["video", "audio", "text"].includes(selectedItem.category) && (
+            {!["video", "series", "audio", "text"].includes(selectedItem.category) && (
               <button onClick={() => void openExternal(selectedItem)}>
                 <Maximize2 size={18} />
                 <span>{t.externalOpen}</span>
@@ -949,7 +963,7 @@ function App(): JSX.Element {
                 <X size={19} />
               </button>
               <div>
-                <h2>{selectedItem.title}</h2>
+                <h2 title={selectedItem.title}>{selectedItem.title}</h2>
                 <p>{pageLabel(selectedItem.currentPage, selectedItem.pageCount)}</p>
               </div>
               <div className="reader-actions">

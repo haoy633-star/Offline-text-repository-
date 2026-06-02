@@ -52,6 +52,18 @@ When a selected folder mostly contains images, it becomes one comic item. If a c
 
 ## Download / 下载方法
 
+### Quick Download / 快速下载
+
+For beginners, download the portable executable directly from the repository:
+
+小白用户可以直接下载仓库里的便携版 exe：
+
+- `downloads/Offline-Library-Portable.exe`
+
+After downloading, double-click the file to run the app.
+
+下载后双击即可运行。
+
 ### Option 1: Download Source Code / 下载源码
 
 1. Open the GitHub repository page.
@@ -246,7 +258,8 @@ For text, audio, and video files, the app first checks manually configured playe
 - Optional cover cache / 可选封面缓存
 - Nested comic folder detection / 多层漫画文件夹识别
 - High performance mode and paged shelf rendering / 高性能模式和分页书架渲染
-- Multi-comic parent folder import, such as `HAPS_2019_ArtPack` and `HAPS_2020_ArtPack_Vol2` as separate items / 多漫画父文件夹导入，会把类似 `HAPS_2019_ArtPack` 和 `HAPS_2020_ArtPack_Vol2` 识别为独立作品
+- Multi-comic parent folder import, such as `Example_2019_ArtPack` and `Example_2020_ArtPack_Vol2` as separate items / 多漫画父文件夹导入，会把类似 `Example_2019_ArtPack` 和 `Example_2020_ArtPack_Vol2` 识别为独立作品
+- Series folder category for TV/drama folders with multiple video files / 多视频电视剧文件夹会归入独立剧集分类
 
 ## Roadmap / 后续计划
 

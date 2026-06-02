@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, dialog, ipcMain, net, protocol, shell } from "electron";
+import { app, BrowserWindow, Menu, dialog, ipcMain, nativeImage, net, protocol, shell } from "electron";
 import { electronApp, optimizer } from "@electron-toolkit/utils";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -32,6 +32,7 @@ const categoryFolders: Record<LibraryCategory, string> = {
   text: "Text",
   audio: "Audio",
   video: "Video",
+  series: "Series",
   archive: "Archives",
   other: "Other"
 };
@@ -102,6 +103,10 @@ function isArchive(filePath: string): boolean {
   return archiveExtensions.has(extname(filePath).toLowerCase());
 }
 
+function isVideo(filePath: string): boolean {
+  return videoExtensions.has(extname(filePath).toLowerCase());
+}
+
 function toLibraryFile(filePath: string): LibraryFile {
   return {
     path: filePath,
@@ -146,10 +151,14 @@ async function cacheCoverIfEnabled(itemId: string, coverPath: string | null): Pr
     return coverPath;
   }
 
-  const extension = extname(coverPath).toLowerCase() || ".jpg";
-  const cachedPath = join(coverCachePath(), `${itemId}${extension}`);
+  const cachedPath = join(coverCachePath(), `${itemId}.png`);
   await mkdir(coverCachePath(), { recursive: true });
-  await copyFile(coverPath, cachedPath);
+  const image = nativeImage.createFromPath(coverPath);
+  if (image.isEmpty()) {
+    return coverPath;
+  }
+  const thumbnail = image.resize({ width: 360, height: 540, quality: "good" });
+  await writeFile(cachedPath, thumbnail.toPNG());
   return cachedPath;
 }
 
@@ -282,6 +291,7 @@ async function snapshot(items: LibraryItem[]): Promise<LibrarySnapshot> {
     text: 0,
     audio: 0,
     video: 0,
+    series: 0,
     archive: 0,
     other: 0
   };
@@ -411,6 +421,34 @@ async function createFileItem(filePath: string, existing: LibraryItem | undefine
   };
 }
 
+async function createSeriesFolderItem(folderPath: string, existing: LibraryItem | undefined): Promise<LibraryItem | null> {
+  const absolutePath = resolve(folderPath);
+  const files = (await findFilesInFolder(absolutePath)).filter(isVideo);
+  if (files.length < 2) {
+    return null;
+  }
+
+  const timestamp = now();
+  return {
+    id: hash(`series:${absolutePath}`),
+    title: titleFromPath(absolutePath),
+    sourceType: "folder",
+    sourcePath: absolutePath,
+    category: "series",
+    coverPath: null,
+    pagePaths: [],
+    pageCount: 0,
+    files: files.map(toLibraryFile),
+    previewText: null,
+    tags: existing?.tags ?? [],
+    addedAt: existing?.addedAt ?? timestamp,
+    updatedAt: timestamp,
+    lastOpenedAt: existing?.lastOpenedAt ?? null,
+    currentPage: 0,
+    favorite: existing?.favorite ?? false
+  };
+}
+
 async function createArchiveItem(archivePath: string, existing: LibraryItem | undefined): Promise<LibraryItem | null> {
   const absolutePath = resolve(archivePath);
   const archiveStat = await stat(absolutePath);
@@ -471,7 +509,10 @@ async function createItemsFromFolder(rootPath: string, existingItems: LibraryIte
     if (entry.isDirectory()) {
       const files = await findFilesInFolder(entryPath);
       const imageCount = files.filter(isImage).length;
-      if (imageCount >= Math.max(2, files.length * 0.5)) {
+      const videoCount = files.filter(isVideo).length;
+      if (videoCount >= 2 && videoCount >= files.length * 0.5) {
+        result.push(await createSeriesFolderItem(entryPath, currentById.get(hash(`series:${resolve(entryPath)}`))));
+      } else if (imageCount >= Math.max(2, files.length * 0.5)) {
         result.push(await createComicFolderItem(entryPath, currentById.get(hash(`folder:${resolve(entryPath)}`))));
       } else {
         for (const filePath of files) {
@@ -700,7 +741,7 @@ async function autoOrganizeFolder(): Promise<AutoOrganizeResult> {
   }
 
   const destinationRoot = resolve(destinationSelection.filePaths[0]);
-  const counts: Record<LibraryCategory, number> = { comic: 0, image: 0, text: 0, audio: 0, video: 0, archive: 0, other: 0 };
+  const counts: Record<LibraryCategory, number> = { comic: 0, image: 0, text: 0, audio: 0, video: 0, series: 0, archive: 0, other: 0 };
   let moved = 0;
   let skipped = 0;
   const current = await readLibrary();
@@ -739,7 +780,7 @@ function emptyAutoOrganizeResult(sourcePath: string | null, destinationPath: str
     skipped: 0,
     sourcePath,
     destinationPath,
-    categories: { comic: 0, image: 0, text: 0, audio: 0, video: 0, archive: 0, other: 0 }
+    categories: { comic: 0, image: 0, text: 0, audio: 0, video: 0, series: 0, archive: 0, other: 0 }
   };
 }
 
