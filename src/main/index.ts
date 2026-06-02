@@ -617,6 +617,15 @@ async function uniquePath(folderPath: string, name: string): Promise<string> {
   return candidate;
 }
 
+function isInsidePath(parentPath: string, childPath: string): boolean {
+  const relativePath = relative(resolve(parentPath), resolve(childPath));
+  return relativePath === "" || (!relativePath.startsWith("..") && !parse(relativePath).root);
+}
+
+function isAlreadyOrganized(item: LibraryItem, destinationRoot: string): boolean {
+  return isInsidePath(join(destinationRoot, categoryFolders[item.category]), item.sourcePath);
+}
+
 async function movePath(sourcePath: string, destinationPath: string, recursive: boolean): Promise<void> {
   await mkdir(dirname(destinationPath), { recursive: true });
   try {
@@ -672,6 +681,12 @@ async function organizeComics(compressFolders: boolean): Promise<OrganizeResult>
     }
 
     try {
+      if (isAlreadyOrganized(item, destinationRoot)) {
+        nextItems.push(item);
+        skipped += 1;
+        continue;
+      }
+
       if (compressFolders && item.sourceType === "folder") {
         const extension = item.category === "comic" ? ".cbz" : null;
         if (!extension) {
@@ -764,6 +779,11 @@ async function autoOrganizeFolder(): Promise<AutoOrganizeResult> {
   for (const item of current) {
     try {
       if (!existsSync(item.sourcePath)) {
+        skipped += 1;
+        nextItems.push(item);
+        continue;
+      }
+      if (isAlreadyOrganized(item, destinationRoot)) {
         skipped += 1;
         nextItems.push(item);
         continue;
