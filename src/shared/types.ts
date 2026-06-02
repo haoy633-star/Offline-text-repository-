@@ -19,6 +19,7 @@ export interface LibraryItem {
   pagePaths: string[];
   pageCount: number;
   files: LibraryFile[];
+  previewText: string | null;
   addedAt: string;
   updatedAt: string;
   lastOpenedAt: string | null;
@@ -46,6 +47,14 @@ export interface ImportResult {
   updated: number;
   skipped: number;
   items: LibraryItem[];
+}
+
+export interface ImportProgress {
+  phase: "scanning" | "importing" | "saving" | "done";
+  current: number;
+  total: number;
+  message: string;
+  startedAt: number;
 }
 
 export interface OrganizeResult {

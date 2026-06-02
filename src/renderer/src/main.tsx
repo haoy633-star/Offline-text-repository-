@@ -30,7 +30,7 @@ import {
   Video,
   X
 } from "lucide-react";
-import type { AppLanguage, AppSettings, LibraryCategory, LibraryItem, LibrarySnapshot } from "../../shared/types";
+import type { AppLanguage, AppSettings, ImportProgress, LibraryCategory, LibraryItem, LibrarySnapshot } from "../../shared/types";
 import "./styles.css";
 
 type ViewMode = "grid" | "reader" | "viewer" | "help";
@@ -91,6 +91,9 @@ const copy = {
     zoomOut: "缩小",
     resetZoom: "重置缩放",
     fullscreen: "全屏阅读",
+    importingTitle: "正在导入，请不要退出",
+    elapsed: "已用",
+    remaining: "预计剩余",
     fitPage: "适应页面",
     fitWidth: "适应宽度",
     actualSize: "原始大小",
@@ -161,6 +164,9 @@ const copy = {
     zoomOut: "Zoom out",
     resetZoom: "Reset zoom",
     fullscreen: "Fullscreen reading",
+    importingTitle: "Importing, please do not exit",
+    elapsed: "elapsed",
+    remaining: "estimated remaining",
     fitPage: "Fit page",
     fitWidth: "Fit width",
     actualSize: "Actual size",
@@ -225,6 +231,24 @@ function statFromItems(items: LibraryItem[]): LibrarySnapshot["stats"] {
   };
 }
 
+function formatSeconds(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return "--";
+  if (seconds < 60) return `${Math.ceil(seconds)}s`;
+  return `${Math.floor(seconds / 60)}m ${Math.ceil(seconds % 60)}s`;
+}
+
+function progressRatio(progress: ImportProgress): number {
+  if (progress.total <= 0) return 0.08;
+  return Math.max(0.04, Math.min(0.98, progress.current / progress.total));
+}
+
+function estimatedRemaining(progress: ImportProgress): number {
+  const elapsed = (Date.now() - progress.startedAt) / 1000;
+  const ratio = progressRatio(progress);
+  if (ratio <= 0.04 || progress.current === 0) return Number.NaN;
+  return elapsed * (1 / ratio - 1);
+}
+
 function App(): JSX.Element {
   const [snapshot, setSnapshot] = useState<LibrarySnapshot>(defaultSnapshot());
   const [query, setQuery] = useState("");
@@ -238,6 +262,8 @@ function App(): JSX.Element {
   const [pureReading, setPureReading] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [textContent, setTextContent] = useState("");
+  const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
+  const [, setProgressTick] = useState(0);
 
   const lang: AppLanguage = snapshot.settings.language ?? "zh";
   const t = copy[lang];
@@ -260,6 +286,18 @@ function App(): JSX.Element {
   useEffect(() => {
     void refreshLibrary();
   }, []);
+
+  useEffect(() => {
+    return window.comicShelf.onImportProgress((progress) => {
+      setImportProgress(progress.phase === "done" ? null : progress);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!importProgress) return undefined;
+    const timer = window.setInterval(() => setProgressTick((value) => value + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [importProgress]);
 
   useEffect(() => {
     setNotice(copy[lang].importHint);
@@ -307,11 +345,13 @@ function App(): JSX.Element {
   async function importFolders(): Promise<void> {
     setBusy(true);
     try {
+      setImportProgress({ phase: "scanning", current: 0, total: 1, message: "Waiting for folder selection", startedAt: Date.now() });
       const result = await window.comicShelf.importFolders();
       updateItems(result.items);
       setViewMode("grid");
       setNotice(`${t.importFolder}: ${t.moved} ${result.added + result.updated}, ${t.skipped} ${result.skipped}`);
     } finally {
+      setImportProgress(null);
       setBusy(false);
     }
   }
@@ -319,11 +359,13 @@ function App(): JSX.Element {
   async function importArchives(): Promise<void> {
     setBusy(true);
     try {
+      setImportProgress({ phase: "scanning", current: 0, total: 1, message: "Waiting for archive selection", startedAt: Date.now() });
       const result = await window.comicShelf.importArchives();
       updateItems(result.items);
       setViewMode("grid");
       setNotice(`${t.importArchive}: ${t.moved} ${result.added + result.updated}, ${t.skipped} ${result.skipped}`);
     } finally {
+      setImportProgress(null);
       setBusy(false);
     }
   }
@@ -627,6 +669,7 @@ function App(): JSX.Element {
                       <span>{item.category === "comic" || item.category === "image" ? pageLabel(item.currentPage, item.pageCount) : t.internalViewer}</span>
                     </div>
                     <h3 title={item.title}>{item.title}</h3>
+                    {item.previewText && <p className="text-preview">{item.previewText}</p>}
                   </div>
                   <div className="book-tools">
                     <button title={item.favorite ? t.unfavorited : t.favorite} onClick={() => void toggleFavorite(item)}>
@@ -767,6 +810,29 @@ function App(): JSX.Element {
             <button className="page-hitbox right" title={t.next} onClick={() => void goToPage(selectedItem.currentPage + 1)} />
           </div>
         </section>
+      )}
+
+      {importProgress && (
+        <div className="import-overlay" role="status" aria-live="polite">
+          <div className="import-panel">
+            <h2>{t.importingTitle}</h2>
+            <p>{importProgress.message}</p>
+            <div className="progress-track">
+              <div className="progress-fill" style={{ width: `${Math.round(progressRatio(importProgress) * 100)}%` }} />
+            </div>
+            <div className="progress-meta">
+              <span>
+                {importProgress.current} / {importProgress.total}
+              </span>
+              <span>
+                {t.elapsed}: {formatSeconds((Date.now() - importProgress.startedAt) / 1000)}
+              </span>
+              <span>
+                {t.remaining}: {formatSeconds(estimatedRemaining(importProgress))}
+              </span>
+            </div>
+          </div>
+        </div>
       )}
     </main>
   );

@@ -543,6 +543,18 @@ input[type="range"] {
   margin-top: 4px;
 }
 
+.text-preview {
+  display: -webkit-box;
+  margin-top: 7px !important;
+  overflow: hidden;
+  color: #c8d2dd !important;
+  font-size: 12px !important;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  white-space: normal;
+}
+
 .book-tools {
   position: absolute;
   top: 8px;
@@ -596,11 +608,13 @@ input[type="range"] {
 .reader-bar {
   gap: 18px;
   background: #15171a;
+  overflow: hidden;
 }
 
 .reader-bar > div:nth-child(2) {
   min-width: 0;
   flex: 1;
+  flex-shrink: 1;
 }
 
 .reader-bar h2 {
@@ -613,10 +627,16 @@ input[type="range"] {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-width: min(720px, 62vw);
+  min-width: 0;
+  max-width: min(760px, 62vw);
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 3px;
+  flex-shrink: 1;
 }
 
 .reader-actions input[type="range"] {
+  flex: 0 0 180px;
   width: 180px;
   accent-color: #e5a24d;
 }
@@ -638,6 +658,7 @@ input[type="range"] {
 }
 
 .reader-bar button {
+  flex: 0 0 auto;
   width: 42px;
   min-height: 42px;
 }
@@ -759,6 +780,68 @@ input[type="range"] {
   color: #dbe1e7;
   font-size: 16px;
   line-height: 1.8;
+}
+
+.import-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(8, 9, 10, 0.62);
+  backdrop-filter: blur(8px);
+}
+
+.import-panel {
+  width: min(560px, 100%);
+  padding: 22px;
+  border: 1px solid rgba(242, 179, 93, 0.26);
+  border-radius: 8px;
+  background: #17191c;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.46);
+}
+
+.import-panel h2,
+.import-panel p {
+  margin: 0;
+}
+
+.import-panel h2 {
+  color: #fff6e6;
+  font-size: 19px;
+}
+
+.import-panel p {
+  margin-top: 8px;
+  overflow: hidden;
+  color: #c8d2dd;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progress-track {
+  height: 10px;
+  margin-top: 18px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #2b3036;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #d98f39, #f2b35d);
+  transition: width 180ms ease;
+}
+
+.progress-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  color: #a8b0b8;
+  font-size: 12px;
 }
 
 @media (max-width: 1080px) {

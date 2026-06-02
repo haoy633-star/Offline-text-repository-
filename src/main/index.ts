@@ -12,6 +12,7 @@ import type {
   AppSettings,
   AutoOrganizeResult,
   ImportResult,
+  ImportProgress,
   LibraryCategory,
   LibraryFile,
   LibraryItem,
@@ -36,6 +37,7 @@ const categoryFolders: Record<LibraryCategory, string> = {
 };
 
 let mainWindow: BrowserWindow | null = null;
+let activeImportStartedAt = 0;
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -103,6 +105,31 @@ function toLibraryFile(filePath: string): LibraryFile {
     extension: extname(filePath).toLowerCase(),
     category: categoryForExtension(filePath)
   };
+}
+
+function emitImportProgress(progress: Omit<ImportProgress, "startedAt">): void {
+  mainWindow?.webContents.send("library:import-progress", {
+    ...progress,
+    startedAt: activeImportStartedAt
+  } satisfies ImportProgress);
+}
+
+async function createTextPreview(filePath: string): Promise<string | null> {
+  if (categoryForExtension(filePath) !== "text") {
+    return null;
+  }
+
+  const extension = extname(filePath).toLowerCase();
+  if (![".txt", ".md", ".markdown"].includes(extension)) {
+    return null;
+  }
+
+  try {
+    const raw = await readFile(filePath, "utf8");
+    return raw.replace(/\s+/g, " ").trim().slice(0, 280) || null;
+  } catch {
+    return null;
+  }
 }
 
 async function detectPlayers(): Promise<Partial<Record<LibraryCategory, string>>> {
@@ -183,6 +210,7 @@ function migrateItem(raw: Partial<Omit<LibraryItem, "sourceType">> & { sourceTyp
     pagePaths,
     pageCount: raw.pageCount ?? pagePaths.length,
     files: raw.files ?? pagePaths.map(toLibraryFile),
+    previewText: raw.previewText ?? null,
     addedAt: raw.addedAt ?? now(),
     updatedAt: raw.updatedAt ?? now(),
     lastOpenedAt: raw.lastOpenedAt ?? null,
@@ -279,6 +307,7 @@ async function createComicFolderItem(folderPath: string, existing: LibraryItem |
     pagePaths,
     pageCount: pagePaths.length,
     files: pagePaths.map(toLibraryFile),
+    previewText: null,
     addedAt: existing?.addedAt ?? timestamp,
     updatedAt: timestamp,
     lastOpenedAt: existing?.lastOpenedAt ?? null,
@@ -305,6 +334,7 @@ function createComicItemFromPages(folderPath: string, pagePaths: string[], exist
     pagePaths: sortedPages,
     pageCount: sortedPages.length,
     files: sortedPages.map(toLibraryFile),
+    previewText: null,
     addedAt: existing?.addedAt ?? timestamp,
     updatedAt: timestamp,
     lastOpenedAt: existing?.lastOpenedAt ?? null,
@@ -328,6 +358,7 @@ async function createFileItem(filePath: string, existing: LibraryItem | undefine
     pagePaths: file.category === "image" ? [absolutePath] : [],
     pageCount: file.category === "image" ? 1 : 0,
     files: [file],
+    previewText: await createTextPreview(absolutePath),
     addedAt: existing?.addedAt ?? timestamp,
     updatedAt: timestamp,
     lastOpenedAt: existing?.lastOpenedAt ?? null,
@@ -373,6 +404,7 @@ async function createArchiveItem(archivePath: string, existing: LibraryItem | un
     pagePaths,
     pageCount: pagePaths.length,
     files: pagePaths.map(toLibraryFile),
+    previewText: null,
     addedAt: existing?.addedAt ?? timestamp,
     updatedAt: timestamp,
     lastOpenedAt: existing?.lastOpenedAt ?? null,
@@ -743,10 +775,22 @@ app.whenReady().then(() => {
 
     const current = await readLibrary();
     const imports: Array<LibraryItem | null> = [];
-    for (const folderPath of selection.filePaths) {
+    activeImportStartedAt = Date.now();
+    emitImportProgress({ phase: "scanning", current: 0, total: selection.filePaths.length, message: "Preparing folders" });
+    for (let index = 0; index < selection.filePaths.length; index += 1) {
+      const folderPath = selection.filePaths[index];
+      emitImportProgress({
+        phase: "importing",
+        current: index,
+        total: selection.filePaths.length,
+        message: `Importing ${basename(folderPath)}`
+      });
       imports.push(...(await createItemsFromFolder(folderPath, current)));
     }
-    return mergeImports(imports);
+    emitImportProgress({ phase: "saving", current: selection.filePaths.length, total: selection.filePaths.length, message: "Saving library" });
+    const result = await mergeImports(imports);
+    emitImportProgress({ phase: "done", current: selection.filePaths.length, total: selection.filePaths.length, message: "Done" });
+    return result;
   });
 
   ipcMain.handle("library:import-archives", async () => {
@@ -762,10 +806,24 @@ app.whenReady().then(() => {
 
     const current = await readLibrary();
     const currentBySource = new Map(current.map((item) => [item.sourcePath, item]));
-    const imports = await Promise.all(
-      selection.filePaths.filter(isArchive).map((archivePath) => createArchiveItem(archivePath, currentBySource.get(resolve(archivePath))))
-    );
-    return mergeImports(imports);
+    const archivePaths = selection.filePaths.filter(isArchive);
+    const imports: Array<LibraryItem | null> = [];
+    activeImportStartedAt = Date.now();
+    emitImportProgress({ phase: "scanning", current: 0, total: archivePaths.length, message: "Preparing archives" });
+    for (let index = 0; index < archivePaths.length; index += 1) {
+      const archivePath = archivePaths[index];
+      emitImportProgress({
+        phase: "importing",
+        current: index,
+        total: archivePaths.length,
+        message: `Importing ${basename(archivePath)}`
+      });
+      imports.push(await createArchiveItem(archivePath, currentBySource.get(resolve(archivePath))));
+    }
+    emitImportProgress({ phase: "saving", current: archivePaths.length, total: archivePaths.length, message: "Saving library" });
+    const result = await mergeImports(imports);
+    emitImportProgress({ phase: "done", current: archivePaths.length, total: archivePaths.length, message: "Done" });
+    return result;
   });
 
   ipcMain.handle("library:update-progress", async (_, itemId: string, page: number) => {

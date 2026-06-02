@@ -4,6 +4,7 @@ import type {
   AppSettings,
   AutoOrganizeResult,
   ImportResult,
+  ImportProgress,
   LibraryCategory,
   LibraryItem,
   LibrarySnapshot,
@@ -14,6 +15,11 @@ const api = {
   getLibrary: (): Promise<LibrarySnapshot> => ipcRenderer.invoke("library:get"),
   importFolders: (): Promise<ImportResult> => ipcRenderer.invoke("library:import-folders"),
   importArchives: (): Promise<ImportResult> => ipcRenderer.invoke("library:import-archives"),
+  onImportProgress: (callback: (progress: ImportProgress) => void): (() => void) => {
+    const listener = (_: Electron.IpcRendererEvent, progress: ImportProgress): void => callback(progress);
+    ipcRenderer.on("library:import-progress", listener);
+    return () => ipcRenderer.removeListener("library:import-progress", listener);
+  },
   updateProgress: (itemId: string, page: number): Promise<LibraryItem | null> =>
     ipcRenderer.invoke("library:update-progress", itemId, page),
   toggleFavorite: (itemId: string): Promise<LibrarySnapshot> => ipcRenderer.invoke("library:toggle-favorite", itemId),
