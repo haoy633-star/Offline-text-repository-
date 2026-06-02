@@ -43,6 +43,7 @@ export interface AppSettings {
   detectedPlayers: PlayerSettings;
   language: AppLanguage;
   coverCacheEnabled: boolean;
+  highPerformanceMode: boolean;
 }
 
 export interface ImportResult {

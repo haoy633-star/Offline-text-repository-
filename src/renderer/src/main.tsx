@@ -120,6 +120,13 @@ const copy = {
     enableCache: "启用封面缓存",
     disableCache: "关闭并清除缓存",
     cacheHint: "默认关闭。开启后会占用少量内存/磁盘来加快封面预览。",
+    highPerformance: "高性能模式",
+    enableHighPerformance: "启用高性能模式",
+    disableHighPerformance: "关闭高性能模式",
+    highPerformanceHint: "如果导入超过几千个文件，建议开启。它会使用更多内存和封面缓存，书架会按批次显示来保持流畅。",
+    page: "页",
+    nextPage: "下一页",
+    prevPage: "上一页",
     fitPage: "适应页面",
     fitWidth: "适应宽度",
     actualSize: "原始大小",
@@ -210,6 +217,13 @@ const copy = {
     enableCache: "Enable cover cache",
     disableCache: "Disable and clear cache",
     cacheHint: "Off by default. Enabling uses a little memory/disk space to speed up cover previews.",
+    highPerformance: "High performance mode",
+    enableHighPerformance: "Enable high performance",
+    disableHighPerformance: "Disable high performance",
+    highPerformanceHint: "Recommended when importing thousands of files. It uses more memory and cover cache, while rendering the shelf in batches for smoothness.",
+    page: "Page",
+    nextPage: "Next page",
+    prevPage: "Previous page",
     fitPage: "Fit page",
     fitWidth: "Fit width",
     actualSize: "Actual size",
@@ -240,7 +254,7 @@ function defaultSnapshot(): LibrarySnapshot {
       pages: 0,
       categories: { comic: 0, image: 0, text: 0, audio: 0, video: 0, archive: 0, other: 0 }
     },
-    settings: { players: {}, detectedPlayers: {}, language: "zh", coverCacheEnabled: false }
+    settings: { players: {}, detectedPlayers: {}, language: "zh", coverCacheEnabled: false, highPerformanceMode: false }
   };
 }
 
@@ -297,6 +311,7 @@ function App(): JSX.Element {
   const [query, setQuery] = useState("");
   const [sortKey, setSortKey] = useState<LibrarySortKey>("recent");
   const [tagFilter, setTagFilter] = useState<string>("all");
+  const [page, setPage] = useState(1);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [filter, setFilter] = useState<FilterKey>("all");
@@ -341,6 +356,18 @@ function App(): JSX.Element {
   const availableTags = useMemo(() => {
     return [...new Set(snapshot.items.flatMap((item) => item.tags))].sort((a, b) => a.localeCompare(b));
   }, [snapshot.items]);
+
+  const pageSize = snapshot.settings.highPerformanceMode ? 360 : 160;
+  const pageCount = Math.max(1, Math.ceil(filteredItems.length / pageSize));
+  const visibleItems = useMemo(() => {
+    const safePage = Math.min(page, pageCount);
+    const start = (safePage - 1) * pageSize;
+    return filteredItems.slice(start, start + pageSize);
+  }, [filteredItems, page, pageCount, pageSize]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filter, query, sortKey, tagFilter]);
 
   useEffect(() => {
     void refreshLibrary();
@@ -526,6 +553,15 @@ function App(): JSX.Element {
     setSnapshot(next);
   }
 
+  async function toggleHighPerformance(): Promise<void> {
+    const enable = !snapshot.settings.highPerformanceMode;
+    const next = await window.comicShelf.setHighPerformance(enable);
+    setSnapshot(next);
+    if (enable) {
+      window.alert(t.highPerformanceHint);
+    }
+  }
+
   async function organizeComics(): Promise<void> {
     if (!window.confirm(t.organizeWarning)) return;
     if (compressFolders && !window.confirm(t.compressWarning)) return;
@@ -697,6 +733,11 @@ function App(): JSX.Element {
               <span>{t.clearLibrary}</span>
             </button>
             <p className="cache-hint">{t.cacheHint}</p>
+            <p className="cache-hint">{t.highPerformanceHint}</p>
+            <button className="admin-button" onClick={() => void toggleHighPerformance()} disabled={busy}>
+              <Shield size={16} />
+              <span>{snapshot.settings.highPerformanceMode ? t.disableHighPerformance : t.enableHighPerformance}</span>
+            </button>
             <button className="organize-button secondary" onClick={() => void toggleCoverCache()} disabled={busy}>
               <Settings size={16} />
               <span>{snapshot.settings.coverCacheEnabled ? t.disableCache : t.enableCache}</span>
@@ -731,10 +772,16 @@ function App(): JSX.Element {
             <div>
               <h2>{filter === "favorite" ? t.favorite : filter === "all" ? t.library : t.categories[filter]}</h2>
               <p>
-                {filteredItems.length} {t.visible}
+                {filteredItems.length} {t.visible} · {t.page} {Math.min(page, pageCount)} / {pageCount}
               </p>
             </div>
             <div className="topbar-controls">
+              <button disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
+                {t.prevPage}
+              </button>
+              <button disabled={page >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>
+                {t.nextPage}
+              </button>
               <label>
                 <span>{t.sort}</span>
                 <select value={sortKey} onChange={(event) => setSortKey(event.target.value as LibrarySortKey)}>
@@ -767,7 +814,7 @@ function App(): JSX.Element {
             </div>
           ) : (
             <div className="book-grid">
-              {filteredItems.map((item) => (
+              {visibleItems.map((item) => (
                 <article className={`book-card category-${item.category}`} key={item.id}>
                   <button className="cover-button" onClick={() => void openItem(item)}>
                     {item.coverPath ? (

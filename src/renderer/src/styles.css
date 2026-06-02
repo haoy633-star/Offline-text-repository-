@@ -456,6 +456,22 @@ input[type="range"] {
   color: #f6f2ea;
 }
 
+.topbar-controls button {
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: #2b3036;
+  color: #f6f2ea;
+}
+
+.topbar-controls button:hover {
+  background: #39414a;
+}
+
+.topbar-controls button:disabled {
+  opacity: 0.42;
+}
+
 .topbar h2,
 .reader-bar h2 {
   font-size: 22px;

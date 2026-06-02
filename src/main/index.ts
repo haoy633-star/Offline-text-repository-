@@ -212,10 +212,11 @@ async function readSettings(): Promise<AppSettings> {
       players: data.players ?? {},
       detectedPlayers: await detectPlayers(),
       language: data.language ?? "zh",
-      coverCacheEnabled: data.coverCacheEnabled ?? false
+      coverCacheEnabled: data.coverCacheEnabled ?? false,
+      highPerformanceMode: data.highPerformanceMode ?? false
     };
   } catch {
-    return { players: {}, detectedPlayers: await detectPlayers(), language: "zh", coverCacheEnabled: false };
+    return { players: {}, detectedPlayers: await detectPlayers(), language: "zh", coverCacheEnabled: false, highPerformanceMode: false };
   }
 }
 
@@ -465,28 +466,6 @@ async function createItemsFromFolder(rootPath: string, existingItems: LibraryIte
   const currentById = new Map(existingItems.map((item) => [item.id, item]));
   const result: Array<LibraryItem | null> = [];
   const looseFiles: string[] = [];
-  const immediateDirectories = entries.filter((entry) => entry.isDirectory());
-  const rootFiles = entries.filter((entry) => entry.isFile()).map((entry) => join(absoluteRoot, entry.name));
-  if (immediateDirectories.length > 0 && immediateDirectories.length <= 30) {
-    const nestedFiles = await findFilesInFolder(absoluteRoot);
-    const nestedImages = nestedFiles.filter(isImage);
-    const rootNonImages = rootFiles.filter((filePath) => !isImage(filePath));
-    const childImageFolders = await Promise.all(
-      immediateDirectories.map(async (entry) => {
-        const files = await findFilesInFolder(join(absoluteRoot, entry.name));
-        return files.filter(isImage).length > 0;
-      })
-    );
-    if (
-      nestedImages.length >= 2 &&
-      nestedImages.length >= nestedFiles.length * 0.65 &&
-      rootNonImages.length <= 2 &&
-      childImageFolders.filter(Boolean).length >= Math.max(1, immediateDirectories.length * 0.75)
-    ) {
-      return [await createComicFolderItem(absoluteRoot, currentById.get(hash(`folder:${absoluteRoot}`)))];
-    }
-  }
-
   for (const entry of entries) {
     const entryPath = join(absoluteRoot, entry.name);
     if (entry.isDirectory()) {
@@ -1010,6 +989,20 @@ app.whenReady().then(() => {
     }));
     await writeLibrary(restored);
     return snapshot(restored);
+  });
+
+  ipcMain.handle("settings:set-high-performance", async (_, enabled: boolean) => {
+    const settings = await readSettings();
+    settings.highPerformanceMode = enabled;
+    if (enabled) {
+      settings.coverCacheEnabled = true;
+    }
+    await writeSettings(settings);
+    if (enabled) {
+      const items = await rebuildCoverCache(await readLibrary());
+      await writeLibrary(items);
+    }
+    return snapshot(await readLibrary());
   });
 
   ipcMain.handle("file:reveal", async (_, filePath: string) => {
