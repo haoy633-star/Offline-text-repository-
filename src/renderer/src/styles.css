@@ -611,7 +611,7 @@ input[type="range"] {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  max-width: 88px;
+  max-width: 126px;
   gap: 6px;
   opacity: 0;
   transition: opacity 160ms ease;

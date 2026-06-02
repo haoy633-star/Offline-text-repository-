@@ -15,6 +15,7 @@ import {
   Heart,
   HelpCircle,
   Library,
+  Tags,
   Maximize2,
   Minus,
   Music,
@@ -69,8 +70,12 @@ const copy = {
     adminTools: "管理员工具",
     compressComicFolders: "文件夹漫画压缩为 CBZ",
     relaunchAdmin: "管理员模式重启",
-    organizeImported: "整理已导入漫画",
-    autoOrganize: "扫描大文件夹并分类",
+    organizeImported: "整理已导入资源",
+    autoOrganize: "归档并分类已导入资源",
+    organizeWarning:
+      "这个操作会移动当前库中已导入资源的原始文件/文件夹到你接下来选择的新目录，并按分类放入子文件夹。旧位置的文件会被移走。请确认没有其它程序正在使用这些文件。",
+    compressWarning:
+      "压缩模式会把文件夹漫画压缩为 CBZ，压缩成功后删除原漫画文件夹。视频、音频、文本通常已经压缩，不会强行二次压缩。",
     clearLibrary: "清空库",
     clearConfirm: "确定清空库吗？这不会删除你的原始文件，只会清空应用里的索引和缓存。",
     help: "使用方法",
@@ -123,7 +128,7 @@ const copy = {
     externalOpen: "使用外部程序打开",
     internalViewer: "内置查看器",
     helpText:
-      "导入文件夹：选择一个漫画文件夹或混合资料文件夹。多张图片组成的文件夹会被识别为漫画；散落在根目录的单张图片会归入图片分类。导入 CBZ / ZIP：用于导入漫画压缩包。收藏：点爱心后会出现在收藏筛选中。阅读器：方向键或空格翻页，第一页/最后一页按钮可快速跳转，缩放按钮可调整显示比例，适应页面/适应宽度/原始大小用于处理不同图片比例。纯阅读/全屏阅读会隐藏侧边栏、顶部工具栏和系统菜单。外部播放器：如果检测到 VLC、PotPlayer、Windows Media Player、SumatraPDF 等会自动使用；也可以手动指定。管理员工具：整理已导入漫画只处理库里已有漫画；扫描大文件夹并分类会把来源文件夹里的文件移动到目标目录下的 Comics、Images、Text、Audio、Video、Archives、Other。清空库只清空索引和缓存，不删除原始文件。",
+      "导入文件夹：选择一个漫画文件夹或混合资料文件夹。多张图片组成的文件夹会被识别为漫画；散落单图会归入图片分类；文本、音频、视频、压缩包会自动归类。导入 CBZ / ZIP：用于导入漫画压缩包，应用会解包到缓存用于阅读。搜索：会匹配标题、原始路径和标签。排序：可按 A-Z、Z-A、最新导入、最早导入、最近打开排列。收藏：点爱心后会出现在收藏筛选中。标签：点卡片上的标签按钮，输入逗号分隔的标签，例如 已读, 喜欢, 作者名；之后可以用顶部 Tag 下拉筛选。阅读器：方向键或空格翻页，第一页/最后一页按钮快速跳转，缩放和适应模式用于不同图片比例。全屏阅读会隐藏侧边栏、顶部工具栏和系统菜单。外部播放器：如果检测到 VLC、PotPlayer、Windows Media Player、SumatraPDF 等会自动使用，也可以手动指定。清空库：只清空应用索引和缓存，不删除原始文件。整理已导入资源：会把库里已导入的原始文件移动到你选择的新目录并按分类归档；压缩模式会把文件夹漫画压缩为 CBZ。归档并分类已导入资源：这是大型整理操作，会移动库中所有已导入资源到新目录下的 Comics、Images、Text、Audio、Video、Archives、Other，请务必先确认目标目录。",
     categories: {
       comic: "漫画",
       image: "图片",
@@ -155,8 +160,12 @@ const copy = {
     adminTools: "Admin Tools",
     compressComicFolders: "Compress folder comics to CBZ",
     relaunchAdmin: "Relaunch as Admin",
-    organizeImported: "Organize Imported Comics",
-    autoOrganize: "Scan Folder and Classify",
+    organizeImported: "Organize Imported Resources",
+    autoOrganize: "Archive and Classify Imported Resources",
+    organizeWarning:
+      "This will move original files/folders already imported in the library to a new folder you choose next, placing them into category subfolders. Files will be moved away from their old locations. Make sure no other app is using them.",
+    compressWarning:
+      "Compression mode converts folder-based comics to CBZ and removes the original comic folder after success. Video, audio, and text are usually already compressed and will not be recompressed.",
     clearLibrary: "Clear Library",
     clearConfirm: "Clear the library? Original files will not be deleted; only the app index and cache will be reset.",
     help: "Help",
@@ -209,7 +218,7 @@ const copy = {
     externalOpen: "Open externally",
     internalViewer: "Built-in viewer",
     helpText:
-      "Import Folder: choose a comic folder or a mixed folder. A folder with multiple images is treated as a comic; loose single images are placed in Images. Import CBZ / ZIP: import comic archives. Favorites: click the heart to keep an item in the Favorites filter. Reader: use arrow keys or Space to turn pages, first/last buttons for quick jumps, zoom controls for scale, and fit-page/fit-width/actual-size modes for different image ratios. Pure/fullscreen reading hides the sidebar, toolbar, and system menu. External players: the app auto-detects common players such as VLC, PotPlayer, Windows Media Player, and SumatraPDF, while manual player selection is still available. Admin tools: Organize Imported Comics only touches comics already in the library; Scan Folder and Classify moves files from a source folder into Comics, Images, Text, Audio, Video, Archives, and Other. Clear Library resets only the app index and cache.",
+      "Import Folder: choose a comic folder or mixed media folder. Folders with multiple images are treated as comics; loose images go to Images; text, audio, video, and archives are classified automatically. Import CBZ / ZIP: imports comic archives and extracts them to app cache for reading. Search: matches title, original path, and tags. Sort: choose A-Z, Z-A, newest import, oldest import, or recently opened. Favorites: click the heart to keep an item in Favorites. Tags: click the tag button on a card and enter comma-separated tags such as Read, Favorite, Author. Then use the Tag dropdown to filter. Reader: Arrow keys or Space turn pages; first/last buttons jump quickly; zoom and fit modes handle different image ratios. Fullscreen reading hides the sidebar, toolbar, and native menu. External players: common players such as VLC, PotPlayer, Windows Media Player, and SumatraPDF are detected automatically, and manual selection is still available. Clear Library: resets only the app index and cache, not original files. Organize Imported Resources: moves original imported files into a new destination folder and category subfolders. Compression mode converts folder comics to CBZ. Archive and Classify Imported Resources is a large operation that moves all imported resources into Comics, Images, Text, Audio, Video, Archives, and Other, so confirm the destination carefully.",
     categories: {
       comic: "Comics",
       image: "Images",
@@ -518,6 +527,8 @@ function App(): JSX.Element {
   }
 
   async function organizeComics(): Promise<void> {
+    if (!window.confirm(t.organizeWarning)) return;
+    if (compressFolders && !window.confirm(t.compressWarning)) return;
     setBusy(true);
     try {
       const result = await window.comicShelf.organizeComics(compressFolders);
@@ -534,6 +545,7 @@ function App(): JSX.Element {
   }
 
   async function autoOrganizeFolder(): Promise<void> {
+    if (!window.confirm(t.organizeWarning)) return;
     setBusy(true);
     try {
       const result = await window.comicShelf.autoOrganizeFolder();
@@ -797,7 +809,7 @@ function App(): JSX.Element {
                       <Maximize2 size={16} />
                     </button>
                     <button title={t.editTags} onClick={() => void editTags(item)}>
-                      <Settings size={16} />
+                      <Tags size={16} />
                     </button>
                     <button title={t.reveal} onClick={() => void window.comicShelf.revealInExplorer(item.sourcePath)}>
                       <FolderOpen size={16} />

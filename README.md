@@ -117,6 +117,12 @@ npm run build
 
 ## How To Use / 使用方法
 
+### Main Library / 主资料库
+
+The library grid is the main screen. Every card represents one imported resource: a comic, image, text file, audio file, video file, archive, or other file.
+
+主资料库是软件的主界面。每张卡片代表一个已经导入的资源：漫画、图片、文本、音频、视频、压缩包或其它文件。
+
 1. Launch the app.
 2. Click `导入文件夹` to import a folder that contains comics, text files, audio, video, or mixed content.
 3. Click `导入 CBZ / ZIP` to import comic archives.
@@ -135,6 +141,37 @@ npm run build
 16. Use the sort controls to choose A-Z, Z-A, newest, oldest, or recently opened order.
 17. Use the tag button on an item card to add comma-separated custom tags.
 18. Enable cover cache from Admin Tools if you want faster cover previews and can accept a small cache.
+
+### Card Buttons / 卡片按钮
+
+- Heart / 爱心：add or remove from Favorites / 加入或取消收藏。
+- Play / 播放：open the item. Comics and images open in the built-in reader; other files use detected/custom players when possible.
+- External open / 外部打开：force the item to open in an external app or Windows default app.
+- Tag / 标签：edit custom tags. Enter tags separated by commas, for example `read, favorite, author`.
+- Folder / 文件夹：reveal the original file location in Windows Explorer.
+- Trash / 移除：remove from the app library only. Original files are not deleted.
+
+### Sorting And Tags / 排序与标签
+
+Use the sort dropdown at the top of the library to choose `A-Z`, `Z-A`, newest import, oldest import, or recently opened. Use the Tag dropdown to filter by a custom tag. Tags are useful for read status, author, favorite type, translation group, or anything personal.
+
+顶部排序下拉框可以选择 `A-Z`、`Z-A`、最新导入、最早导入、最近打开。Tag 下拉框可以按自定义标签筛选。标签适合记录已读/未读、作者、喜好、汉化组、题材等。
+
+### Admin Tools / 管理员工具
+
+These tools may move files. Read the confirmation dialog carefully before continuing.
+
+这些工具可能会移动文件。继续前请仔细阅读确认窗口。
+
+- `整理已导入资源`: choose a destination folder, then move all imported resources into category subfolders. This changes the original file locations.
+- `归档并分类已导入资源`: a larger organization operation for the whole library. It moves imported resources into `Comics`, `Images`, `Text`, `Audio`, `Video`, `Archives`, and `Other`.
+- `文件夹漫画压缩为 CBZ`: when enabled, folder-based comics are compressed to `.cbz`; after successful compression, the original comic folder is removed.
+- Cover cache / 封面缓存：off by default. When enabled, the app caches cover previews only, not full books. You can disable and clear it later.
+
+- `整理已导入资源`：选择目标文件夹后，把当前库里的资源移动到分类子文件夹。原文件位置会改变。
+- `归档并分类已导入资源`：面向整个库的大整理操作，会移动已导入资源到 `Comics`、`Images`、`Text`、`Audio`、`Video`、`Archives`、`Other`。
+- `文件夹漫画压缩为 CBZ`：开启后，文件夹漫画会被压缩成 `.cbz`；压缩成功后原漫画文件夹会被删除。
+- 封面缓存：默认关闭。开启后只缓存封面预览，不缓存整本漫画，可随时关闭并清除。
 
 中文简版：
 

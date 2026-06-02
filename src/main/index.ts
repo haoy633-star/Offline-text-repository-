@@ -612,7 +612,7 @@ async function zipFolderToCbz(folderPath: string, outputPath: string): Promise<v
 
 async function organizeComics(compressFolders: boolean): Promise<OrganizeResult> {
   const selection = await dialog.showOpenDialog(mainWindow!, {
-    title: "Choose manga organization folder",
+    title: "Choose imported resource organization folder",
     properties: ["openDirectory", "createDirectory"]
   });
 
@@ -630,15 +630,25 @@ async function organizeComics(compressFolders: boolean): Promise<OrganizeResult>
   const nextItems: LibraryItem[] = [];
 
   for (const item of current) {
-    if (item.category !== "comic" || !existsSync(item.sourcePath)) {
+    if (!existsSync(item.sourcePath)) {
       nextItems.push(item);
-      if (item.category === "comic") skipped += 1;
+      skipped += 1;
       continue;
     }
 
     try {
       if (compressFolders && item.sourceType === "folder") {
-        const cbzPath = await uniquePath(destinationRoot, `${sanitizeName(item.title)}.cbz`);
+        const extension = item.category === "comic" ? ".cbz" : null;
+        if (!extension) {
+          const sourceInfo = await stat(item.sourcePath);
+          const destinationPath = await uniquePath(join(destinationRoot, categoryFolders[item.category]), basename(item.sourcePath));
+          await movePath(item.sourcePath, destinationPath, sourceInfo.isDirectory());
+          nextItems.push(updateMovedItemPaths(item, destinationPath));
+          moved += 1;
+          continue;
+        }
+
+        const cbzPath = await uniquePath(join(destinationRoot, categoryFolders.comic), `${sanitizeName(item.title)}.cbz`);
         await zipFolderToCbz(item.sourcePath, cbzPath);
         await rm(item.sourcePath, { recursive: true, force: true });
         nextItems.push({
@@ -651,26 +661,9 @@ async function organizeComics(compressFolders: boolean): Promise<OrganizeResult>
         compressed += 1;
       } else {
         const sourceInfo = await stat(item.sourcePath);
-        const destinationPath = await uniquePath(destinationRoot, basename(item.sourcePath));
+        const destinationPath = await uniquePath(join(destinationRoot, categoryFolders[item.category]), basename(item.sourcePath));
         await movePath(item.sourcePath, destinationPath, sourceInfo.isDirectory());
-        const pagePaths =
-          item.sourceType === "folder"
-            ? item.pagePaths.map((pagePath) => join(destinationPath, relative(item.sourcePath, pagePath)))
-            : item.pagePaths;
-        nextItems.push({
-          ...item,
-          sourcePath: destinationPath,
-          coverPath:
-            item.coverPath && item.sourceType === "folder"
-              ? join(destinationPath, relative(item.sourcePath, item.coverPath))
-              : item.coverPath,
-          pagePaths,
-          files:
-            item.sourceType === "folder"
-              ? item.files.map((file) => ({ ...file, path: join(destinationPath, relative(item.sourcePath, file.path)) }))
-              : item.files.map((file) => (file.path === item.sourcePath ? { ...file, path: destinationPath } : file)),
-          updatedAt: now()
-        });
+        nextItems.push(updateMovedItemPaths(item, destinationPath));
         moved += 1;
       }
     } catch {
@@ -681,6 +674,27 @@ async function organizeComics(compressFolders: boolean): Promise<OrganizeResult>
 
   await writeLibrary(nextItems);
   return { moved, compressed, skipped, destinationPath: destinationRoot, items: (await snapshot(nextItems)).items };
+}
+
+function updateMovedItemPaths(item: LibraryItem, destinationPath: string): LibraryItem {
+  const pagePaths =
+    item.sourceType === "folder" ? item.pagePaths.map((pagePath) => join(destinationPath, relative(item.sourcePath, pagePath))) : item.pagePaths;
+  return {
+    ...item,
+    sourcePath: destinationPath,
+    coverPath:
+      item.coverPath && item.sourceType === "folder"
+        ? join(destinationPath, relative(item.sourcePath, item.coverPath))
+        : item.coverPath === item.sourcePath
+          ? destinationPath
+          : item.coverPath,
+    pagePaths: item.sourceType === "file" && item.pagePaths.includes(item.sourcePath) ? [destinationPath] : pagePaths,
+    files:
+      item.sourceType === "folder"
+        ? item.files.map((file) => ({ ...file, path: join(destinationPath, relative(item.sourcePath, file.path)) }))
+        : item.files.map((file) => (file.path === item.sourcePath ? { ...file, path: destinationPath } : file)),
+    updatedAt: now()
+  };
 }
 
 async function categoryForOrganizing(filePath: string): Promise<LibraryCategory> {
@@ -698,73 +712,46 @@ async function categoryForOrganizing(filePath: string): Promise<LibraryCategory>
 }
 
 async function autoOrganizeFolder(): Promise<AutoOrganizeResult> {
-  const sourceSelection = await dialog.showOpenDialog(mainWindow!, {
-    title: "Choose source folder to classify",
-    properties: ["openDirectory"]
-  });
-  if (sourceSelection.canceled || !sourceSelection.filePaths[0]) {
-    return emptyAutoOrganizeResult(null, null);
-  }
-
   const destinationSelection = await dialog.showOpenDialog(mainWindow!, {
-    title: "Choose destination folder",
+    title: "Choose destination folder for imported library",
     properties: ["openDirectory", "createDirectory"]
   });
   if (destinationSelection.canceled || !destinationSelection.filePaths[0]) {
-    return emptyAutoOrganizeResult(resolve(sourceSelection.filePaths[0]), null);
+    return emptyAutoOrganizeResult(null, null);
   }
 
-  const sourceRoot = resolve(sourceSelection.filePaths[0]);
   const destinationRoot = resolve(destinationSelection.filePaths[0]);
-  const relativeDestination = relative(sourceRoot, destinationRoot);
-  if (relativeDestination && !relativeDestination.startsWith("..")) {
-    return { ...emptyAutoOrganizeResult(sourceRoot, destinationRoot), skipped: 1 };
-  }
   const counts: Record<LibraryCategory, number> = { comic: 0, image: 0, text: 0, audio: 0, video: 0, archive: 0, other: 0 };
   let moved = 0;
   let skipped = 0;
+  const current = await readLibrary();
+  const nextItems: LibraryItem[] = [];
 
   for (const folderName of Object.values(categoryFolders)) {
     await mkdir(join(destinationRoot, folderName), { recursive: true });
   }
 
-  const entries = await readdir(sourceRoot, { withFileTypes: true });
-  for (const entry of entries) {
-    const entryPath = join(sourceRoot, entry.name);
+  for (const item of current) {
     try {
-      if (entry.isDirectory()) {
-        const files = await findFilesInFolder(entryPath);
-        const imageCount = files.filter(isImage).length;
-        if (imageCount >= Math.max(2, files.length * 0.5)) {
-          const destinationPath = await uniquePath(join(destinationRoot, categoryFolders.comic), basename(entryPath));
-          await movePath(entryPath, destinationPath, true);
-          counts.comic += 1;
-          moved += 1;
-        } else {
-          for (const filePath of files) {
-            const category = await categoryForOrganizing(filePath);
-            const destinationPath = await uniquePath(
-              join(destinationRoot, categoryFolders[category], relative(sourceRoot, dirname(filePath))),
-              basename(filePath)
-            );
-            await movePath(filePath, destinationPath, false);
-            counts[category] += 1;
-            moved += 1;
-          }
-        }
-      } else if (entry.isFile()) {
-        const category = await categoryForOrganizing(entryPath);
-        const destinationPath = await uniquePath(join(destinationRoot, categoryFolders[category]), basename(entryPath));
-        await movePath(entryPath, destinationPath, false);
-        counts[category] += 1;
-        moved += 1;
+      if (!existsSync(item.sourcePath)) {
+        skipped += 1;
+        nextItems.push(item);
+        continue;
       }
+      const sourceInfo = await stat(item.sourcePath);
+      const destinationPath = await uniquePath(join(destinationRoot, categoryFolders[item.category]), basename(item.sourcePath));
+      await movePath(item.sourcePath, destinationPath, sourceInfo.isDirectory());
+      nextItems.push(updateMovedItemPaths(item, destinationPath));
+      counts[item.category] += 1;
+      moved += 1;
     } catch {
       skipped += 1;
+      nextItems.push(item);
     }
   }
 
-  return { moved, skipped, sourcePath: sourceRoot, destinationPath: destinationRoot, categories: counts };
+  await writeLibrary(nextItems);
+  return { moved, skipped, sourcePath: null, destinationPath: destinationRoot, categories: counts };
 }
 
 function emptyAutoOrganizeResult(sourcePath: string | null, destinationPath: string | null): AutoOrganizeResult {
