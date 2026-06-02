@@ -63,6 +63,10 @@ function importCachePath(): string {
   return join(app.getPath("userData"), "imports");
 }
 
+function coverCachePath(): string {
+  return join(app.getPath("userData"), "cover-cache");
+}
+
 function now(): string {
   return new Date().toISOString();
 }
@@ -132,6 +136,34 @@ async function createTextPreview(filePath: string): Promise<string | null> {
   }
 }
 
+async function cacheCoverIfEnabled(itemId: string, coverPath: string | null): Promise<string | null> {
+  if (!coverPath || !existsSync(coverPath)) {
+    return coverPath;
+  }
+
+  const settings = await readSettings();
+  if (!settings.coverCacheEnabled) {
+    return coverPath;
+  }
+
+  const extension = extname(coverPath).toLowerCase() || ".jpg";
+  const cachedPath = join(coverCachePath(), `${itemId}${extension}`);
+  await mkdir(coverCachePath(), { recursive: true });
+  await copyFile(coverPath, cachedPath);
+  return cachedPath;
+}
+
+async function rebuildCoverCache(items: LibraryItem[]): Promise<LibraryItem[]> {
+  await rm(coverCachePath(), { recursive: true, force: true });
+  await mkdir(coverCachePath(), { recursive: true });
+  const nextItems: LibraryItem[] = [];
+  for (const item of items) {
+    const sourceCover = item.coverPath && existsSync(item.coverPath) ? item.coverPath : item.pagePaths.find((pagePath) => existsSync(pagePath)) ?? null;
+    nextItems.push({ ...item, coverPath: await cacheCoverIfEnabled(item.id, sourceCover) });
+  }
+  return nextItems;
+}
+
 async function detectPlayers(): Promise<Partial<Record<LibraryCategory, string>>> {
   const candidates: Array<{ category: LibraryCategory; paths: string[] }> = [
     {
@@ -179,10 +211,11 @@ async function readSettings(): Promise<AppSettings> {
     return {
       players: data.players ?? {},
       detectedPlayers: await detectPlayers(),
-      language: data.language ?? "zh"
+      language: data.language ?? "zh",
+      coverCacheEnabled: data.coverCacheEnabled ?? false
     };
   } catch {
-    return { players: {}, detectedPlayers: await detectPlayers(), language: "zh" };
+    return { players: {}, detectedPlayers: await detectPlayers(), language: "zh", coverCacheEnabled: false };
   }
 }
 
@@ -211,6 +244,7 @@ function migrateItem(raw: Partial<Omit<LibraryItem, "sourceType">> & { sourceTyp
     pageCount: raw.pageCount ?? pagePaths.length,
     files: raw.files ?? pagePaths.map(toLibraryFile),
     previewText: raw.previewText ?? null,
+    tags: raw.tags ?? [],
     addedAt: raw.addedAt ?? now(),
     updatedAt: raw.updatedAt ?? now(),
     lastOpenedAt: raw.lastOpenedAt ?? null,
@@ -297,17 +331,20 @@ async function createComicFolderItem(folderPath: string, existing: LibraryItem |
   }
 
   const timestamp = now();
+  const id = hash(`folder:${absolutePath}`);
+  const coverPath = await cacheCoverIfEnabled(id, pagePaths[0]);
   return {
-    id: hash(`folder:${absolutePath}`),
+    id,
     title: titleFromPath(absolutePath),
     sourceType: "folder",
     sourcePath: absolutePath,
     category: "comic",
-    coverPath: pagePaths[0],
+    coverPath,
     pagePaths,
     pageCount: pagePaths.length,
     files: pagePaths.map(toLibraryFile),
     previewText: null,
+    tags: existing?.tags ?? [],
     addedAt: existing?.addedAt ?? timestamp,
     updatedAt: timestamp,
     lastOpenedAt: existing?.lastOpenedAt ?? null,
@@ -324,17 +361,20 @@ function createComicItemFromPages(folderPath: string, pagePaths: string[], exist
   }
 
   const timestamp = now();
+  const id = hash(`folder:${absolutePath}:loose-images`);
+  const coverPath = sortedPages[0];
   return {
-    id: hash(`folder:${absolutePath}:loose-images`),
+    id,
     title: titleFromPath(absolutePath),
     sourceType: "folder",
     sourcePath: absolutePath,
     category: "comic",
-    coverPath: sortedPages[0],
+    coverPath,
     pagePaths: sortedPages,
     pageCount: sortedPages.length,
     files: sortedPages.map(toLibraryFile),
     previewText: null,
+    tags: existing?.tags ?? [],
     addedAt: existing?.addedAt ?? timestamp,
     updatedAt: timestamp,
     lastOpenedAt: existing?.lastOpenedAt ?? null,
@@ -347,18 +387,21 @@ async function createFileItem(filePath: string, existing: LibraryItem | undefine
   const absolutePath = resolve(filePath);
   const timestamp = now();
   const file = toLibraryFile(absolutePath);
+  const id = hash(`file:${absolutePath}`);
+  const coverPath = file.category === "image" ? await cacheCoverIfEnabled(id, absolutePath) : null;
 
   return {
-    id: hash(`file:${absolutePath}`),
+    id,
     title: titleFromPath(absolutePath),
     sourceType: "file",
     sourcePath: absolutePath,
     category: file.category,
-    coverPath: file.category === "image" ? absolutePath : null,
+    coverPath,
     pagePaths: file.category === "image" ? [absolutePath] : [],
     pageCount: file.category === "image" ? 1 : 0,
     files: [file],
     previewText: await createTextPreview(absolutePath),
+    tags: existing?.tags ?? [],
     addedAt: existing?.addedAt ?? timestamp,
     updatedAt: timestamp,
     lastOpenedAt: existing?.lastOpenedAt ?? null,
@@ -394,17 +437,19 @@ async function createArchiveItem(archivePath: string, existing: LibraryItem | un
   }
 
   const timestamp = now();
+  const coverPath = await cacheCoverIfEnabled(id, pagePaths[0]);
   return {
     id,
     title: titleFromPath(absolutePath),
     sourceType: "archive",
     sourcePath: absolutePath,
     category: "comic",
-    coverPath: pagePaths[0],
+    coverPath,
     pagePaths,
     pageCount: pagePaths.length,
     files: pagePaths.map(toLibraryFile),
     previewText: null,
+    tags: existing?.tags ?? [],
     addedAt: existing?.addedAt ?? timestamp,
     updatedAt: timestamp,
     lastOpenedAt: existing?.lastOpenedAt ?? null,
@@ -420,6 +465,27 @@ async function createItemsFromFolder(rootPath: string, existingItems: LibraryIte
   const currentById = new Map(existingItems.map((item) => [item.id, item]));
   const result: Array<LibraryItem | null> = [];
   const looseFiles: string[] = [];
+  const immediateDirectories = entries.filter((entry) => entry.isDirectory());
+  const rootFiles = entries.filter((entry) => entry.isFile()).map((entry) => join(absoluteRoot, entry.name));
+  if (immediateDirectories.length > 0 && immediateDirectories.length <= 30) {
+    const nestedFiles = await findFilesInFolder(absoluteRoot);
+    const nestedImages = nestedFiles.filter(isImage);
+    const rootNonImages = rootFiles.filter((filePath) => !isImage(filePath));
+    const childImageFolders = await Promise.all(
+      immediateDirectories.map(async (entry) => {
+        const files = await findFilesInFolder(join(absoluteRoot, entry.name));
+        return files.filter(isImage).length > 0;
+      })
+    );
+    if (
+      nestedImages.length >= 2 &&
+      nestedImages.length >= nestedFiles.length * 0.65 &&
+      rootNonImages.length <= 2 &&
+      childImageFolders.filter(Boolean).length >= Math.max(1, immediateDirectories.length * 0.75)
+    ) {
+      return [await createComicFolderItem(absoluteRoot, currentById.get(hash(`folder:${absoluteRoot}`)))];
+    }
+  }
 
   for (const entry of entries) {
     const entryPath = join(absoluteRoot, entry.name);
@@ -851,6 +917,19 @@ app.whenReady().then(() => {
     return snapshot(items);
   });
 
+  ipcMain.handle("library:update-tags", async (_, itemId: string, tags: string[]) => {
+    const cleanTags = [...new Set(tags.map((tag) => tag.trim()).filter(Boolean))].slice(0, 20);
+    const items = await readLibrary();
+    const item = items.find((entry) => entry.id === itemId);
+    if (!item) {
+      return snapshot(items);
+    }
+    item.tags = cleanTags;
+    item.updatedAt = now();
+    await writeLibrary(items);
+    return snapshot(items);
+  });
+
   ipcMain.handle("library:open-external", async (_, itemId: string) => {
     const items = await readLibrary();
     const item = items.find((entry) => entry.id === itemId);
@@ -919,6 +998,31 @@ app.whenReady().then(() => {
     settings.language = language;
     await writeSettings(settings);
     return readSettings();
+  });
+
+  ipcMain.handle("settings:set-cover-cache", async (_, enabled: boolean) => {
+    const settings = await readSettings();
+    settings.coverCacheEnabled = enabled;
+    await writeSettings(settings);
+    if (enabled) {
+      const items = await rebuildCoverCache(await readLibrary());
+      await writeLibrary(items);
+    }
+    return snapshot(await readLibrary());
+  });
+
+  ipcMain.handle("settings:clear-cover-cache", async () => {
+    await rm(coverCachePath(), { recursive: true, force: true });
+    const settings = await readSettings();
+    settings.coverCacheEnabled = false;
+    await writeSettings(settings);
+    const items = await readLibrary();
+    const restored = items.map((item) => ({
+      ...item,
+      coverPath: item.pagePaths.find((pagePath) => existsSync(pagePath)) ?? item.coverPath
+    }));
+    await writeLibrary(restored);
+    return snapshot(restored);
   });
 
   ipcMain.handle("file:reveal", async (_, filePath: string) => {

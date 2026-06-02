@@ -30,7 +30,15 @@ import {
   Video,
   X
 } from "lucide-react";
-import type { AppLanguage, AppSettings, ImportProgress, LibraryCategory, LibraryItem, LibrarySnapshot } from "../../shared/types";
+import type {
+  AppLanguage,
+  AppSettings,
+  ImportProgress,
+  LibraryCategory,
+  LibraryItem,
+  LibrarySnapshot,
+  LibrarySortKey
+} from "../../shared/types";
 import "./styles.css";
 
 type ViewMode = "grid" | "reader" | "viewer" | "help";
@@ -94,6 +102,19 @@ const copy = {
     importingTitle: "正在导入，请不要退出",
     elapsed: "已用",
     remaining: "预计剩余",
+    sort: "排序",
+    sortAz: "A 到 Z",
+    sortZa: "Z 到 A",
+    sortNewest: "最新导入",
+    sortOldest: "最早导入",
+    sortRecent: "最近打开",
+    editTags: "编辑标签",
+    tagPrompt: "输入标签，用逗号分隔",
+    allTags: "全部标签",
+    coverCache: "封面缓存",
+    enableCache: "启用封面缓存",
+    disableCache: "关闭并清除缓存",
+    cacheHint: "默认关闭。开启后会占用少量内存/磁盘来加快封面预览。",
     fitPage: "适应页面",
     fitWidth: "适应宽度",
     actualSize: "原始大小",
@@ -167,6 +188,19 @@ const copy = {
     importingTitle: "Importing, please do not exit",
     elapsed: "elapsed",
     remaining: "estimated remaining",
+    sort: "Sort",
+    sortAz: "A to Z",
+    sortZa: "Z to A",
+    sortNewest: "Newest import",
+    sortOldest: "Oldest import",
+    sortRecent: "Recently opened",
+    editTags: "Edit tags",
+    tagPrompt: "Enter tags separated by commas",
+    allTags: "All tags",
+    coverCache: "Cover cache",
+    enableCache: "Enable cover cache",
+    disableCache: "Disable and clear cache",
+    cacheHint: "Off by default. Enabling uses a little memory/disk space to speed up cover previews.",
     fitPage: "Fit page",
     fitWidth: "Fit width",
     actualSize: "Actual size",
@@ -197,7 +231,7 @@ function defaultSnapshot(): LibrarySnapshot {
       pages: 0,
       categories: { comic: 0, image: 0, text: 0, audio: 0, video: 0, archive: 0, other: 0 }
     },
-    settings: { players: {}, detectedPlayers: {}, language: "zh" }
+    settings: { players: {}, detectedPlayers: {}, language: "zh", coverCacheEnabled: false }
   };
 }
 
@@ -252,6 +286,8 @@ function estimatedRemaining(progress: ImportProgress): number {
 function App(): JSX.Element {
   const [snapshot, setSnapshot] = useState<LibrarySnapshot>(defaultSnapshot());
   const [query, setQuery] = useState("");
+  const [sortKey, setSortKey] = useState<LibrarySortKey>("recent");
+  const [tagFilter, setTagFilter] = useState<string>("all");
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [filter, setFilter] = useState<FilterKey>("all");
@@ -276,12 +312,26 @@ function App(): JSX.Element {
 
   const filteredItems = useMemo(() => {
     const keyword = query.trim().toLowerCase();
-    return snapshot.items.filter((item) => {
+    const items = snapshot.items.filter((item) => {
       const matchesFilter = filter === "all" || (filter === "favorite" ? item.favorite : item.category === filter);
-      const matchesQuery = !keyword || `${item.title} ${item.sourcePath}`.toLowerCase().includes(keyword);
-      return matchesFilter && matchesQuery;
+      const matchesTag = tagFilter === "all" || item.tags.includes(tagFilter);
+      const matchesQuery = !keyword || `${item.title} ${item.sourcePath} ${item.tags.join(" ")}`.toLowerCase().includes(keyword);
+      return matchesFilter && matchesTag && matchesQuery;
     });
-  }, [filter, query, snapshot.items]);
+    return [...items].sort((a, b) => {
+      if (sortKey === "az") return a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: "base" });
+      if (sortKey === "za") return b.title.localeCompare(a.title, undefined, { numeric: true, sensitivity: "base" });
+      if (sortKey === "newest") return b.addedAt.localeCompare(a.addedAt);
+      if (sortKey === "oldest") return a.addedAt.localeCompare(b.addedAt);
+      const aTime = a.lastOpenedAt ?? a.addedAt;
+      const bTime = b.lastOpenedAt ?? b.addedAt;
+      return bTime.localeCompare(aTime);
+    });
+  }, [filter, query, snapshot.items, sortKey, tagFilter]);
+
+  const availableTags = useMemo(() => {
+    return [...new Set(snapshot.items.flatMap((item) => item.tags))].sort((a, b) => a.localeCompare(b));
+  }, [snapshot.items]);
 
   useEffect(() => {
     void refreshLibrary();
@@ -411,6 +461,14 @@ function App(): JSX.Element {
     setNotice(item.favorite ? t.unfavorited : t.favorited);
   }
 
+  async function editTags(item: LibraryItem): Promise<void> {
+    const value = window.prompt(t.tagPrompt, item.tags.join(", "));
+    if (value === null) return;
+    const tags = value.split(/[，,]/).map((tag) => tag.trim()).filter(Boolean);
+    const next = await window.comicShelf.updateTags(item.id, tags);
+    setSnapshot(next);
+  }
+
   async function removeItem(item: LibraryItem): Promise<void> {
     const next = await window.comicShelf.removeItem(item.id);
     setSnapshot(next);
@@ -443,6 +501,20 @@ function App(): JSX.Element {
   async function setLanguage(language: AppLanguage): Promise<void> {
     const settings = await window.comicShelf.setLanguage(language);
     setSnapshot((current) => ({ ...current, settings }));
+  }
+
+  async function toggleCoverCache(): Promise<void> {
+    if (snapshot.settings.coverCacheEnabled) {
+      await clearCoverCache();
+      return;
+    }
+    const next = await window.comicShelf.setCoverCache(!snapshot.settings.coverCacheEnabled);
+    setSnapshot(next);
+  }
+
+  async function clearCoverCache(): Promise<void> {
+    const next = await window.comicShelf.clearCoverCache();
+    setSnapshot(next);
   }
 
   async function organizeComics(): Promise<void> {
@@ -612,6 +684,17 @@ function App(): JSX.Element {
               <Trash2 size={16} />
               <span>{t.clearLibrary}</span>
             </button>
+            <p className="cache-hint">{t.cacheHint}</p>
+            <button className="organize-button secondary" onClick={() => void toggleCoverCache()} disabled={busy}>
+              <Settings size={16} />
+              <span>{snapshot.settings.coverCacheEnabled ? t.disableCache : t.enableCache}</span>
+            </button>
+            {snapshot.settings.coverCacheEnabled && (
+              <button className="danger-button" onClick={() => void clearCoverCache()} disabled={busy}>
+                <Trash2 size={16} />
+                <span>{t.disableCache}</span>
+              </button>
+            )}
           </section>
 
           <section className="utility-panel">
@@ -638,6 +721,29 @@ function App(): JSX.Element {
               <p>
                 {filteredItems.length} {t.visible}
               </p>
+            </div>
+            <div className="topbar-controls">
+              <label>
+                <span>{t.sort}</span>
+                <select value={sortKey} onChange={(event) => setSortKey(event.target.value as LibrarySortKey)}>
+                  <option value="az">{t.sortAz}</option>
+                  <option value="za">{t.sortZa}</option>
+                  <option value="newest">{t.sortNewest}</option>
+                  <option value="oldest">{t.sortOldest}</option>
+                  <option value="recent">{t.sortRecent}</option>
+                </select>
+              </label>
+              <label>
+                <span>Tag</span>
+                <select value={tagFilter} onChange={(event) => setTagFilter(event.target.value)}>
+                  <option value="all">{t.allTags}</option>
+                  {availableTags.map((tag) => (
+                    <option value={tag} key={tag}>
+                      {tag}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
           </header>
 
@@ -670,6 +776,15 @@ function App(): JSX.Element {
                     </div>
                     <h3 title={item.title}>{item.title}</h3>
                     {item.previewText && <p className="text-preview">{item.previewText}</p>}
+                    {item.tags.length > 0 && (
+                      <div className="tag-list">
+                        {item.tags.map((tag) => (
+                          <button key={tag} onClick={() => setTagFilter(tag)}>
+                            {tag}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div className="book-tools">
                     <button title={item.favorite ? t.unfavorited : t.favorite} onClick={() => void toggleFavorite(item)}>
@@ -680,6 +795,9 @@ function App(): JSX.Element {
                     </button>
                     <button title={t.externalOpen} onClick={() => void openExternal(item)}>
                       <Maximize2 size={16} />
+                    </button>
+                    <button title={t.editTags} onClick={() => void editTags(item)}>
+                      <Settings size={16} />
                     </button>
                     <button title={t.reveal} onClick={() => void window.comicShelf.revealInExplorer(item.sourcePath)}>
                       <FolderOpen size={16} />

@@ -273,6 +273,13 @@ input[type="range"] {
   accent-color: #e5a24d;
 }
 
+.cache-hint {
+  margin: 0;
+  color: #a8b0b8;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .admin-button,
 .organize-button,
 .danger-button,
@@ -427,6 +434,28 @@ input[type="range"] {
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.topbar-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.topbar-controls label {
+  display: grid;
+  gap: 5px;
+  color: #a8b0b8;
+  font-size: 12px;
+}
+
+.topbar-controls select {
+  min-width: 136px;
+  height: 36px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: #20242a;
+  color: #f6f2ea;
+}
+
 .topbar h2,
 .reader-bar h2 {
   font-size: 22px;
@@ -553,6 +582,26 @@ input[type="range"] {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
   white-space: normal;
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.tag-list button {
+  min-height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: #28323b;
+  color: #cde3f6;
+  font-size: 11px;
+}
+
+.tag-list button:hover {
+  background: #344252;
 }
 
 .book-tools {

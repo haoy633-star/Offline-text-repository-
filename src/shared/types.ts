@@ -1,6 +1,7 @@
 export type LibrarySourceType = "folder" | "archive" | "file";
 export type LibraryCategory = "comic" | "image" | "text" | "audio" | "video" | "archive" | "other";
 export type AppLanguage = "zh" | "en";
+export type LibrarySortKey = "az" | "za" | "newest" | "oldest" | "recent";
 
 export interface LibraryFile {
   path: string;
@@ -20,6 +21,7 @@ export interface LibraryItem {
   pageCount: number;
   files: LibraryFile[];
   previewText: string | null;
+  tags: string[];
   addedAt: string;
   updatedAt: string;
   lastOpenedAt: string | null;
@@ -40,6 +42,7 @@ export interface AppSettings {
   players: PlayerSettings;
   detectedPlayers: PlayerSettings;
   language: AppLanguage;
+  coverCacheEnabled: boolean;
 }
 
 export interface ImportResult {

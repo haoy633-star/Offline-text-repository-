@@ -23,6 +23,7 @@ const api = {
   updateProgress: (itemId: string, page: number): Promise<LibraryItem | null> =>
     ipcRenderer.invoke("library:update-progress", itemId, page),
   toggleFavorite: (itemId: string): Promise<LibrarySnapshot> => ipcRenderer.invoke("library:toggle-favorite", itemId),
+  updateTags: (itemId: string, tags: string[]): Promise<LibrarySnapshot> => ipcRenderer.invoke("library:update-tags", itemId, tags),
   openExternal: (itemId: string): Promise<LibrarySnapshot> => ipcRenderer.invoke("library:open-external", itemId),
   clearLibrary: (): Promise<LibrarySnapshot> => ipcRenderer.invoke("library:clear"),
   organizeComics: (compressFolders: boolean): Promise<OrganizeResult> =>
@@ -34,6 +35,8 @@ const api = {
   setPlayer: (category: LibraryCategory): Promise<AppSettings> => ipcRenderer.invoke("settings:set-player", category),
   clearPlayer: (category: LibraryCategory): Promise<AppSettings> => ipcRenderer.invoke("settings:clear-player", category),
   setLanguage: (language: AppLanguage): Promise<AppSettings> => ipcRenderer.invoke("settings:set-language", language),
+  setCoverCache: (enabled: boolean): Promise<LibrarySnapshot> => ipcRenderer.invoke("settings:set-cover-cache", enabled),
+  clearCoverCache: (): Promise<LibrarySnapshot> => ipcRenderer.invoke("settings:clear-cover-cache"),
   revealInExplorer: (filePath: string): Promise<void> => ipcRenderer.invoke("file:reveal", filePath),
   readTextFile: (filePath: string): Promise<string> => ipcRenderer.invoke("file:read-text", filePath),
   openGithub: (): Promise<void> => ipcRenderer.invoke("app:open-github"),
