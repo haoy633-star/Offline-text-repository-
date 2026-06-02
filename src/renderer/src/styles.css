@@ -438,6 +438,8 @@ input[type="range"] {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .topbar-controls label {
@@ -480,7 +482,7 @@ input[type="range"] {
 
 .book-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+  grid-template-columns: repeat(var(--grid-columns, 5), minmax(0, 1fr));
   gap: 22px;
   padding: 28px;
   overflow: auto;
@@ -489,6 +491,8 @@ input[type="range"] {
 .book-card {
   position: relative;
   min-width: 0;
+  content-visibility: auto;
+  contain-intrinsic-size: 300px 420px;
 }
 
 .cover-button {
@@ -513,7 +517,7 @@ input[type="range"] {
 
 .cover-video {
   background: #050607;
-  pointer-events: none;
+  cursor: pointer;
 }
 
 .cover-button:hover img {
@@ -893,6 +897,18 @@ input[type="range"] {
   gap: 8px;
 }
 
+.series-viewer {
+  display: grid;
+  width: min(100%, 1100px);
+  gap: 16px;
+}
+
+.series-viewer video {
+  width: 100%;
+  max-height: min(64vh, 680px);
+  background: #000;
+}
+
 .episode-list button {
   justify-content: start;
   min-height: 40px;
@@ -908,6 +924,12 @@ input[type="range"] {
 
 .episode-list button:hover {
   background: #2f3943;
+}
+
+.episode-list button.active {
+  background: #d98f39;
+  color: #15120f;
+  font-weight: 720;
 }
 
 .internal-viewer audio {
@@ -1015,6 +1037,6 @@ input[type="range"] {
   }
 
   .book-grid {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    grid-template-columns: repeat(var(--grid-columns, 4), minmax(0, 1fr));
   }
 }

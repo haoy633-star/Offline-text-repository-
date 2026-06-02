@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
 import {
   BookOpen,
@@ -45,8 +45,10 @@ import "./styles.css";
 type ViewMode = "grid" | "reader" | "viewer" | "help";
 type FilterKey = "all" | "favorite" | LibraryCategory;
 type FitMode = "page" | "width" | "actual";
+type DisplayMode = "paged" | "scroll";
 
 const categoryKeys: LibraryCategory[] = ["comic", "image", "text", "audio", "video", "series", "archive", "other"];
+const gridColumnOptions = [4, 5, 6] as const;
 
 const copy = {
   zh: {
@@ -137,8 +139,13 @@ const copy = {
     exitPure: "退出纯阅读",
     externalOpen: "使用外部程序打开",
     internalViewer: "内置查看器",
+    columnsPerRow: "每排数量",
+    displayMode: "显示模式",
+    pagedMode: "翻页",
+    scrollMode: "滚动",
+    episode: "剧集",
     helpText:
-      "导入文件夹：选择一个漫画文件夹或混合资料文件夹。多张图片组成的文件夹会被识别为漫画；散落单图会归入图片分类；文本、音频、视频、压缩包会自动归类。导入 CBZ / ZIP：用于导入漫画压缩包，应用会解包到缓存用于阅读。搜索：会匹配标题、原始路径和标签。排序：可按 A-Z、Z-A、最新导入、最早导入、最近打开排列。收藏：点爱心后会出现在收藏筛选中。标签：点卡片上的标签按钮，输入逗号分隔的标签，例如 已读, 喜欢, 作者名；之后可以用顶部 Tag 下拉筛选。阅读器：方向键或空格翻页，第一页/最后一页按钮快速跳转，缩放和适应模式用于不同图片比例。全屏阅读会隐藏侧边栏、顶部工具栏和系统菜单。外部播放器：如果检测到 VLC、PotPlayer、Windows Media Player、SumatraPDF 等会自动使用，也可以手动指定。清空库：只清空应用索引和缓存，不删除原始文件。整理已导入资源：会把库里已导入的原始文件移动到你选择的新目录并按分类归档；压缩模式会把文件夹漫画压缩为 CBZ。归档并分类已导入资源：这是大型整理操作，会移动库中所有已导入资源到新目录下的 Comics、Images、Text、Audio、Video、Archives、Other，请务必先确认目标目录。",
+      "导入文件夹：选择一个漫画文件夹或混合资料文件夹。多张图片组成的文件夹会被识别为漫画；散落单图会归入图片分类；文本、音频、视频、压缩包会自动归类。导入 CBZ / ZIP：用于导入漫画压缩包，应用会解包到缓存用于阅读。搜索：会匹配标题、原始路径和标签。排序：可按 A-Z、Z-A、最新导入、最早导入、最近打开排列。收藏：点爱心后会出现在收藏筛选中。标签：点卡片上的标签按钮，输入逗号分隔的标签，例如 已读, 喜欢, 作者名；之后可以用顶部 Tag 下拉筛选。每排数量：可以选择每行 4、5 或 6 个卡片；显示模式可以在翻页和滚动之间切换，文件很多时建议使用翻页和较少卡片。视频和电视剧：书架卡片会显示轻量视频预览，电视剧会使用第一集预览，打开后可以在内置播放器里选集。阅读器：方向键或空格翻页，第一页/最后一页按钮快速跳转，缩放和适应模式用于不同图片比例。全屏阅读会隐藏侧边栏、顶部工具栏和系统菜单。外部播放器：如果检测到 VLC、PotPlayer、Windows Media Player、SumatraPDF 等会自动使用，也可以手动指定。清空库：只清空应用索引和缓存，不删除原始文件。整理已导入资源：会把库里已导入的原始文件移动到你选择的新目录并按分类归档；压缩模式会把文件夹漫画压缩为 CBZ。归档并分类已导入资源：这是大型整理操作，会移动库中所有已导入资源到新目录下的 Comics、Images、Text、Audio、Video、Archives、Other，请务必先确认目标目录。",
     categories: {
       comic: "漫画",
       image: "图片",
@@ -238,8 +245,13 @@ const copy = {
     exitPure: "Exit pure mode",
     externalOpen: "Open externally",
     internalViewer: "Built-in viewer",
+    columnsPerRow: "Per row",
+    displayMode: "Mode",
+    pagedMode: "Pages",
+    scrollMode: "Scroll",
+    episode: "Episode",
     helpText:
-      "Import Folder: choose a comic folder or mixed media folder. Folders with multiple images are treated as comics; loose images go to Images; text, audio, video, and archives are classified automatically. Import CBZ / ZIP: imports comic archives and extracts them to app cache for reading. Search: matches title, original path, and tags. Sort: choose A-Z, Z-A, newest import, oldest import, or recently opened. Favorites: click the heart to keep an item in Favorites. Tags: click the tag button on a card and enter comma-separated tags such as Read, Favorite, Author. Then use the Tag dropdown to filter. Reader: Arrow keys or Space turn pages; first/last buttons jump quickly; zoom and fit modes handle different image ratios. Fullscreen reading hides the sidebar, toolbar, and native menu. External players: common players such as VLC, PotPlayer, Windows Media Player, and SumatraPDF are detected automatically, and manual selection is still available. Clear Library: resets only the app index and cache, not original files. Organize Imported Resources: moves original imported files into a new destination folder and category subfolders. Compression mode converts folder comics to CBZ. Archive and Classify Imported Resources is a large operation that moves all imported resources into Comics, Images, Text, Audio, Video, Archives, and Other, so confirm the destination carefully.",
+      "Import Folder: choose a comic folder or mixed media folder. Folders with multiple images are treated as comics; loose images go to Images; text, audio, video, and archives are classified automatically. Import CBZ / ZIP: imports comic archives and extracts them to app cache for reading. Search: matches title, original path, and tags. Sort: choose A-Z, Z-A, newest import, oldest import, or recently opened. Favorites: click the heart to keep an item in Favorites. Tags: click the tag button on a card and enter comma-separated tags such as Read, Favorite, Author. Then use the Tag dropdown to filter. Per row: choose 4, 5, or 6 cards per row. Mode switches between page-style and scroll-style browsing; for huge libraries, use page mode and fewer cards. Video and Series: shelf cards show lightweight video previews; Series previews the first episode and opens with a built-in episode selector. Reader: Arrow keys or Space turn pages; first/last buttons jump quickly; zoom and fit modes handle different image ratios. Fullscreen reading hides the sidebar, toolbar, and native menu. External players: common players such as VLC, PotPlayer, Windows Media Player, and SumatraPDF are detected automatically, and manual selection is still available. Clear Library: resets only the app index and cache, not original files. Organize Imported Resources: moves original imported files into a new destination folder and category subfolders. Compression mode converts folder comics to CBZ. Archive and Classify Imported Resources is a large operation that moves all imported resources into Comics, Images, Text, Audio, Video, Archives, and Other, so confirm the destination carefully.",
     categories: {
       comic: "Comics",
       image: "Images",
@@ -283,6 +295,52 @@ function CategoryIcon({ category, size = 28 }: { category: LibraryCategory; size
 
 function fileName(filePath: string): string {
   return filePath.split(/[\\/]/).pop() ?? filePath;
+}
+
+function previewVideoPath(item: LibraryItem): string | null {
+  if (item.category === "video") return item.sourcePath;
+  if (item.category === "series") return item.files.find((file) => file.category === "video")?.path ?? null;
+  return null;
+}
+
+function VideoCoverPreview({ item }: { item: LibraryItem }): JSX.Element {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const sourcePath = previewVideoPath(item);
+
+  function playPreview(): void {
+    const video = videoRef.current;
+    if (!video) return;
+    video.muted = true;
+    void video.play().catch(() => undefined);
+  }
+
+  function pausePreview(): void {
+    const video = videoRef.current;
+    if (!video) return;
+    video.pause();
+  }
+
+  if (!sourcePath) {
+    return (
+      <div className="missing-cover video-cover">
+        <Video size={38} />
+      </div>
+    );
+  }
+
+  return (
+    <video
+      ref={videoRef}
+      className="cover-video"
+      src={window.comicShelf.assetUrl(sourcePath)}
+      muted
+      loop
+      playsInline
+      preload="metadata"
+      onMouseEnter={playPreview}
+      onMouseLeave={pausePreview}
+    />
+  );
 }
 
 function statFromItems(items: LibraryItem[]): LibrarySnapshot["stats"] {
@@ -334,11 +392,20 @@ function App(): JSX.Element {
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
   const [tagEditorItem, setTagEditorItem] = useState<LibraryItem | null>(null);
   const [tagDraft, setTagDraft] = useState("");
+  const [gridColumns, setGridColumns] = useState<number>(() => {
+    const saved = Number(window.localStorage.getItem("offline-library-grid-columns"));
+    return gridColumnOptions.includes(saved as (typeof gridColumnOptions)[number]) ? saved : 5;
+  });
+  const [displayMode, setDisplayMode] = useState<DisplayMode>(
+    () => (window.localStorage.getItem("offline-library-display-mode") === "scroll" ? "scroll" : "paged")
+  );
+  const [selectedEpisodePath, setSelectedEpisodePath] = useState<string | null>(null);
   const [, setProgressTick] = useState(0);
 
   const lang: AppLanguage = snapshot.settings.language ?? "zh";
   const t = copy[lang];
   const [notice, setNotice] = useState(copy.zh.importHint);
+  const deferredQuery = useDeferredValue(query);
 
   const selectedItem = useMemo(
     () => snapshot.items.find((item) => item.id === selectedItemId) ?? null,
@@ -346,7 +413,7 @@ function App(): JSX.Element {
   );
 
   const filteredItems = useMemo(() => {
-    const keyword = query.trim().toLowerCase();
+    const keyword = deferredQuery.trim().toLowerCase();
     const items = snapshot.items.filter((item) => {
       const matchesFilter = filter === "all" || (filter === "favorite" ? item.favorite : item.category === filter);
       const matchesTag = tagFilter === "all" || item.tags.includes(tagFilter);
@@ -362,13 +429,14 @@ function App(): JSX.Element {
       const bTime = b.lastOpenedAt ?? b.addedAt;
       return bTime.localeCompare(aTime);
     });
-  }, [filter, query, snapshot.items, sortKey, tagFilter]);
+  }, [deferredQuery, filter, snapshot.items, sortKey, tagFilter]);
 
   const availableTags = useMemo(() => {
     return [...new Set(snapshot.items.flatMap((item) => item.tags))].sort((a, b) => a.localeCompare(b));
   }, [snapshot.items]);
 
-  const pageSize = snapshot.settings.highPerformanceMode ? 96 : 72;
+  const rowsPerPage = displayMode === "paged" ? (snapshot.settings.highPerformanceMode ? 3 : 4) : snapshot.settings.highPerformanceMode ? 5 : 6;
+  const pageSize = gridColumns * rowsPerPage;
   const pageCount = Math.max(1, Math.ceil(filteredItems.length / pageSize));
   const visibleItems = useMemo(() => {
     const safePage = Math.min(page, pageCount);
@@ -378,7 +446,15 @@ function App(): JSX.Element {
 
   useEffect(() => {
     setPage(1);
-  }, [filter, query, sortKey, tagFilter]);
+  }, [displayMode, filter, gridColumns, query, sortKey, tagFilter]);
+
+  useEffect(() => {
+    window.localStorage.setItem("offline-library-grid-columns", String(gridColumns));
+  }, [gridColumns]);
+
+  useEffect(() => {
+    window.localStorage.setItem("offline-library-display-mode", displayMode);
+  }, [displayMode]);
 
   useEffect(() => {
     void refreshLibrary();
@@ -429,6 +505,13 @@ function App(): JSX.Element {
     void window.comicShelf.readTextFile(selectedItem.sourcePath).then(setTextContent).catch(() => setTextContent(""));
   }, [selectedItem, viewMode]);
 
+  useEffect(() => {
+    if (!selectedItem || selectedItem.category !== "series") return;
+    setSelectedEpisodePath((current) =>
+      current && selectedItem.files.some((file) => file.path === current) ? current : previewVideoPath(selectedItem)
+    );
+  }, [selectedItem]);
+
   async function refreshLibrary(): Promise<void> {
     const data = await window.comicShelf.getLibrary();
     setSnapshot(data);
@@ -469,6 +552,7 @@ function App(): JSX.Element {
 
   async function openItem(item: LibraryItem): Promise<void> {
     setSelectedItemId(item.id);
+    setSelectedEpisodePath(previewVideoPath(item));
     if ((item.category === "comic" || item.category === "image") && item.pageCount > 0) {
       setViewMode("reader");
       await markProgress(item, item.currentPage);
@@ -792,7 +876,7 @@ function App(): JSX.Element {
       )}
 
       {viewMode === "grid" && (
-        <section className="library-view">
+        <section className={`library-view display-${displayMode}`}>
           <header className="topbar">
             <div>
               <h2>{filter === "favorite" ? t.favorite : filter === "all" ? t.library : t.categories[filter]}</h2>
@@ -828,6 +912,23 @@ function App(): JSX.Element {
                   ))}
                 </select>
               </label>
+              <label>
+                <span>{t.columnsPerRow}</span>
+                <select value={gridColumns} onChange={(event) => setGridColumns(Number(event.target.value))}>
+                  {gridColumnOptions.map((count) => (
+                    <option value={count} key={count}>
+                      {count}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>{t.displayMode}</span>
+                <select value={displayMode} onChange={(event) => setDisplayMode(event.target.value as DisplayMode)}>
+                  <option value="paged">{t.pagedMode}</option>
+                  <option value="scroll">{t.scrollMode}</option>
+                </select>
+              </label>
             </div>
           </header>
 
@@ -838,16 +939,14 @@ function App(): JSX.Element {
               <p>{t.noContentHint}</p>
             </div>
           ) : (
-            <div className="book-grid">
+            <div className="book-grid" style={{ ["--grid-columns" as string]: String(gridColumns) }}>
               {visibleItems.map((item) => (
                 <article className={`book-card category-${item.category}`} key={item.id}>
                   <button className="cover-button" onClick={() => void openItem(item)}>
                     {item.coverPath ? (
                       <img src={window.comicShelf.assetUrl(item.coverPath)} alt={item.title} loading="lazy" />
                     ) : item.category === "video" || item.category === "series" ? (
-                      <div className="missing-cover video-cover">
-                        <Video size={38} />
-                      </div>
+                      <VideoCoverPreview item={item} />
                     ) : (
                       <div className="missing-cover">
                         <CategoryIcon category={item.category} size={38} />
@@ -935,12 +1034,20 @@ function App(): JSX.Element {
           <div className="internal-viewer">
             {selectedItem.category === "video" && <video src={window.comicShelf.assetUrl(selectedItem.sourcePath)} controls />}
             {selectedItem.category === "series" && (
-              <div className="episode-list">
-                {selectedItem.files.map((file) => (
-                  <button key={file.path} onClick={() => void window.comicShelf.revealInExplorer(file.path)}>
-                    {file.name}
-                  </button>
-                ))}
+              <div className="series-viewer">
+                {selectedEpisodePath && <video src={window.comicShelf.assetUrl(selectedEpisodePath)} controls />}
+                <div className="episode-list">
+                  {selectedItem.files.map((file, index) => (
+                    <button
+                      className={selectedEpisodePath === file.path ? "active" : ""}
+                      key={file.path}
+                      onClick={() => setSelectedEpisodePath(file.path)}
+                      title={file.name}
+                    >
+                      {t.episode} {index + 1}: {file.name}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
             {selectedItem.category === "audio" && <audio src={window.comicShelf.assetUrl(selectedItem.sourcePath)} controls />}

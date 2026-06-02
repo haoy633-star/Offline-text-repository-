@@ -43,6 +43,7 @@ The app detects content by file extension and folder contents.
 | Text | 文本 | `.txt`, `.md`, `.pdf`, `.epub`, `.docx` |
 | Audio | 音频 | `.mp3`, `.flac`, `.wav`, `.m4a` |
 | Video | 视频 | `.mp4`, `.mkv`, `.avi`, `.mov` |
+| Series | 电视剧 | folders with multiple video episodes |
 | Archives | 压缩包 | `.zip` files without comic images |
 | Other | 其它 | Files that do not match the known groups |
 
@@ -63,6 +64,10 @@ For beginners, download the portable executable directly from the repository:
 After downloading, double-click the file to run the app.
 
 下载后双击即可运行。
+
+The installer uses a guided setup. It lets you choose the install location and whether to create shortcuts, instead of installing immediately after you open it.
+
+安装版使用向导模式。打开安装包后可以选择安装位置，也可以选择是否创建快捷方式，不会再一点开就直接自动安装。
 
 ### Option 1: Download Source Code / 下载源码
 
@@ -154,6 +159,9 @@ The library grid is the main screen. Every card represents one imported resource
 16. Use the sort controls to choose A-Z, Z-A, newest, oldest, or recently opened order.
 17. Use the tag button on an item card to add comma-separated custom tags.
 18. Enable cover cache from Admin Tools if you want faster cover previews and can accept a small cache.
+19. Use `每排数量 / Per row` to choose 4, 5, or 6 cards per row.
+20. Use `显示模式 / Mode` to switch between page-style browsing and scroll-style browsing.
+21. Video and Series cards show lightweight in-app video previews. Series folders preview the first episode and open with an episode selector.
 
 ### Card Buttons / 卡片按钮
 
@@ -169,6 +177,10 @@ The library grid is the main screen. Every card represents one imported resource
 Use the sort dropdown at the top of the library to choose `A-Z`, `Z-A`, newest import, oldest import, or recently opened. Use the Tag dropdown to filter by a custom tag. Tags are useful for read status, author, favorite type, translation group, or anything personal.
 
 顶部排序下拉框可以选择 `A-Z`、`Z-A`、最新导入、最早导入、最近打开。Tag 下拉框可以按自定义标签筛选。标签适合记录已读/未读、作者、喜好、汉化组、题材等。
+
+Use `Per row` to reduce or increase how many cards appear in each row. Use `Mode` to choose page-style browsing when the library is huge, or scroll-style browsing when you want a longer batch on screen. Lower card counts and page-style browsing are recommended for libraries with thousands of files.
+
+可以用 `每排数量` 控制每行显示 4、5 或 6 个卡片。可以用 `显示模式` 选择翻页式浏览或滚动式浏览。文件很多时建议使用较少的每排数量和翻页模式。
 
 ### Admin Tools / 管理员工具
 
@@ -238,8 +250,8 @@ For text, audio, and video files, the app first checks manually configured playe
 | English | 中文 |
 | --- | --- |
 | CBR is not supported yet. | 暂不支持 CBR。 |
-| The app does not include its own video or audio player. | 应用本身不内置视频或音频播放器。 |
-| Very large libraries may need a future thumbnail cache. | 超大资料库后续可能需要缩略图缓存。 |
+| Some very large folders may still take time during the first import scan. | 超大文件夹首次导入扫描仍可能需要一些时间。 |
+| Very large libraries should use high performance mode, cover cache, page-style browsing, and a smaller per-row card count. | 超大资料库建议开启高性能模式、封面缓存、翻页式浏览，并降低每排卡片数量。 |
 
 ## Done Recently / 最近已推进
 
@@ -260,6 +272,10 @@ For text, audio, and video files, the app first checks manually configured playe
 - High performance mode and paged shelf rendering / 高性能模式和分页书架渲染
 - Multi-comic parent folder import, such as `Example_2019_ArtPack` and `Example_2020_ArtPack_Vol2` as separate items / 多漫画父文件夹导入，会把类似 `Example_2019_ArtPack` 和 `Example_2020_ArtPack_Vol2` 识别为独立作品
 - Series folder category for TV/drama folders with multiple video files / 多视频电视剧文件夹会归入独立剧集分类
+- Configurable cards per row and page/scroll browsing mode / 可选择每排卡片数量，并可切换翻页或滚动浏览
+- Lightweight video previews for Video and Series cards / 视频和电视剧卡片支持轻量视频预览
+- Series built-in playback with episode selector / 电视剧内置播放和选集列表
+- Guided Windows installer with install location and shortcut choices / Windows 安装向导支持选择安装位置和快捷方式
 
 ## Roadmap / 后续计划
 

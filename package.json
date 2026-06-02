@@ -49,7 +49,13 @@
       "signAndEditExecutable": false
     },
     "nsis": {
-      "artifactName": "${productName}-${version}-${arch}-Setup.${ext}"
+      "artifactName": "${productName}-${version}-${arch}-Setup.${ext}",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Offline Library"
     },
     "portable": {
       "artifactName": "${productName}-${version}-${arch}-Portable.${ext}"
