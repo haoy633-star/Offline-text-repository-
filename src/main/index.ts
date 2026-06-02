@@ -623,7 +623,13 @@ function isInsidePath(parentPath: string, childPath: string): boolean {
 }
 
 function isAlreadyOrganized(item: LibraryItem, destinationRoot: string): boolean {
-  return isInsidePath(join(destinationRoot, categoryFolders[item.category]), item.sourcePath);
+  if (isInsidePath(join(destinationRoot, categoryFolders[item.category]), item.sourcePath)) {
+    return true;
+  }
+
+  const relativePath = relative(resolve(destinationRoot), resolve(item.sourcePath));
+  const firstFolder = relativePath.split(/[\\/]/)[0];
+  return Object.values(categoryFolders).includes(firstFolder);
 }
 
 async function movePath(sourcePath: string, destinationPath: string, recursive: boolean): Promise<void> {

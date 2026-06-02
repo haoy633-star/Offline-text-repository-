@@ -458,6 +458,21 @@ input[type="range"] {
   color: #f6f2ea;
 }
 
+.topbar-controls .page-jump {
+  width: 76px;
+}
+
+.topbar-controls .page-jump input {
+  width: 100%;
+  height: 36px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  outline: 0;
+  background: #20242a;
+  color: #f6f2ea;
+  text-align: center;
+}
+
 .topbar-controls button {
   min-height: 36px;
   padding: 0 12px;

@@ -132,6 +132,7 @@ const copy = {
     disableHighPerformance: "关闭高性能模式",
     highPerformanceHint: "如果导入超过几千个文件，建议开启。它会使用更多内存和封面缓存，书架会按批次显示来保持流畅。",
     page: "页",
+    jumpPage: "跳转页",
     nextPage: "下一页",
     prevPage: "上一页",
     fitPage: "适应页面",
@@ -240,6 +241,7 @@ const copy = {
     disableHighPerformance: "Disable high performance",
     highPerformanceHint: "Recommended when importing thousands of files. It uses more memory and cover cache, while rendering the shelf in batches for smoothness.",
     page: "Page",
+    jumpPage: "Jump",
     nextPage: "Next page",
     prevPage: "Previous page",
     fitPage: "Fit page",
@@ -311,6 +313,15 @@ function VideoCoverPreview({ item }: { item: LibraryItem }): JSX.Element {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const sourcePath = previewVideoPath(item);
 
+  function seekPreviewFrame(): void {
+    const video = videoRef.current;
+    if (!video || !Number.isFinite(video.duration) || video.duration <= 0) return;
+    const targetTime = Math.min(Math.max(1, video.duration * 0.08), Math.max(0.1, video.duration - 0.1));
+    if (Math.abs(video.currentTime - targetTime) > 0.25) {
+      video.currentTime = targetTime;
+    }
+  }
+
   function playPreview(): void {
     const video = videoRef.current;
     if (!video) return;
@@ -341,6 +352,8 @@ function VideoCoverPreview({ item }: { item: LibraryItem }): JSX.Element {
       loop
       playsInline
       preload="metadata"
+      onLoadedMetadata={seekPreviewFrame}
+      onSeeked={pausePreview}
       onMouseEnter={playPreview}
       onMouseLeave={pausePreview}
     />
@@ -404,6 +417,7 @@ function App(): JSX.Element {
     () => (window.localStorage.getItem("offline-library-display-mode") === "scroll" ? "scroll" : "paged")
   );
   const [selectedEpisodePath, setSelectedEpisodePath] = useState<string | null>(null);
+  const [pageDraft, setPageDraft] = useState("1");
   const gridRef = useRef<HTMLDivElement | null>(null);
   const [, setProgressTick] = useState(0);
 
@@ -465,6 +479,10 @@ function App(): JSX.Element {
   useEffect(() => {
     setPage(1);
   }, [displayMode, filter, gridColumns, query, sortKey, tagFilter]);
+
+  useEffect(() => {
+    setPageDraft(String(Math.min(page, pageCount)));
+  }, [page, pageCount]);
 
   useEffect(() => {
     window.localStorage.setItem("offline-library-grid-columns", String(gridColumns));
@@ -706,6 +724,15 @@ function App(): JSX.Element {
   async function clearCoverCache(): Promise<void> {
     const next = await window.comicShelf.clearCoverCache();
     setSnapshot(next);
+  }
+
+  function jumpToShelfPage(): void {
+    const value = Number.parseInt(pageDraft, 10);
+    if (!Number.isFinite(value)) {
+      setPageDraft(String(Math.min(page, pageCount)));
+      return;
+    }
+    setPage(Math.max(1, Math.min(pageCount, value)));
   }
 
   async function chooseCoverCacheDirectory(): Promise<void> {
@@ -952,6 +979,20 @@ function App(): JSX.Element {
                   <button disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
                     {t.prevPage}
                   </button>
+                  <label className="page-jump">
+                    <span>{t.jumpPage}</span>
+                    <input
+                      value={pageDraft}
+                      inputMode="numeric"
+                      onChange={(event) => setPageDraft(event.target.value.replace(/\D/g, ""))}
+                      onBlur={jumpToShelfPage}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          jumpToShelfPage();
+                        }
+                      }}
+                    />
+                  </label>
                   <button disabled={page >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>
                     {t.nextPage}
                   </button>
