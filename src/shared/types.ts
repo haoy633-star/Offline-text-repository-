@@ -1,5 +1,6 @@
 export type LibrarySourceType = "folder" | "archive" | "file";
 export type LibraryCategory = "comic" | "text" | "audio" | "video" | "archive" | "other";
+export type AppLanguage = "zh" | "en";
 
 export interface LibraryFile {
   path: string;
@@ -36,6 +37,8 @@ export type PlayerSettings = Partial<Record<LibraryCategory, string>>;
 
 export interface AppSettings {
   players: PlayerSettings;
+  detectedPlayers: PlayerSettings;
+  language: AppLanguage;
 }
 
 export interface ImportResult {
@@ -51,6 +54,14 @@ export interface OrganizeResult {
   skipped: number;
   destinationPath: string | null;
   items: LibraryItem[];
+}
+
+export interface AutoOrganizeResult {
+  moved: number;
+  skipped: number;
+  sourcePath: string | null;
+  destinationPath: string | null;
+  categories: Record<LibraryCategory, number>;
 }
 
 export interface LibrarySnapshot {

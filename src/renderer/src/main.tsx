@@ -2,17 +2,25 @@ import React, { useEffect, useMemo, useState } from "react";
 import ReactDOM from "react-dom/client";
 import {
   BookOpen,
+  ChevronsLeft,
+  ChevronsRight,
   ChevronLeft,
   ChevronRight,
   FileArchive,
   FileText,
   FolderOpen,
   FolderPlus,
+  Github,
   Heart,
+  HelpCircle,
   Library,
+  Maximize2,
+  Minus,
   Music,
   PackagePlus,
   Play,
+  Plus,
+  RotateCcw,
   Search,
   Settings,
   Shield,
@@ -21,34 +29,169 @@ import {
   Video,
   X
 } from "lucide-react";
-import type { AppSettings, LibraryCategory, LibraryItem, LibrarySnapshot } from "../../shared/types";
+import type { AppLanguage, AppSettings, LibraryCategory, LibraryItem, LibrarySnapshot } from "../../shared/types";
 import "./styles.css";
 
-type ViewMode = "grid" | "reader";
+type ViewMode = "grid" | "reader" | "viewer" | "help";
 type FilterKey = "all" | "favorite" | LibraryCategory;
+type FitMode = "page" | "width" | "actual";
 
-const categories: Array<{ key: LibraryCategory; label: string; en: string }> = [
-  { key: "comic", label: "漫画", en: "Comics" },
-  { key: "text", label: "文本", en: "Text" },
-  { key: "audio", label: "音频", en: "Audio" },
-  { key: "video", label: "视频", en: "Video" },
-  { key: "archive", label: "压缩包", en: "Archives" },
-  { key: "other", label: "其它", en: "Other" }
-];
+const categoryKeys: LibraryCategory[] = ["comic", "text", "audio", "video", "archive", "other"];
 
-function clampPage(item: LibraryItem, page: number): number {
-  return Math.max(0, Math.min(page, item.pageCount - 1));
+const copy = {
+  zh: {
+    appName: "Offline Library",
+    subtitle: "离线漫画与资料库",
+    importHint: "导入文件夹后会自动分类；没有外部播放器时会使用内置查看器。",
+    ready: "资料库已就绪，可以搜索、筛选分类或查看收藏。",
+    search: "搜索标题或路径",
+    importFolder: "导入文件夹",
+    importArchive: "导入 CBZ / ZIP",
+    all: "全部",
+    favorite: "收藏",
+    library: "资料库",
+    visible: "项可见",
+    noContent: "还没有可显示的内容",
+    noContentHint: "导入一个混合文件夹，应用会自动识别漫画、文本、音频、视频和其它文件。",
+    externalPlayers: "外部播放器",
+    windowsDefault: "内置/系统默认",
+    choosePlayer: "选择播放器",
+    clearDefault: "恢复默认",
+    adminTools: "管理员工具",
+    compressComicFolders: "文件夹漫画压缩为 CBZ",
+    relaunchAdmin: "管理员模式重启",
+    organizeImported: "整理已导入漫画",
+    autoOrganize: "扫描大文件夹并分类",
+    clearLibrary: "清空库",
+    clearConfirm: "确定清空库吗？这不会删除你的原始文件，只会清空应用里的索引和缓存。",
+    help: "使用方法",
+    github: "GitHub",
+    language: "中文 / English",
+    openOrRead: "打开或阅读",
+    reveal: "打开所在位置",
+    remove: "从库中移除",
+    removeDone: "已从库中移除，原始文件不会被删除。",
+    favorited: "已收藏",
+    unfavorited: "已取消收藏",
+    cancelled: "已取消操作。",
+    clearDone: "库已清空，原始文件没有被删除。",
+    organizeDone: "整理完成",
+    moved: "移动",
+    compressed: "压缩",
+    skipped: "跳过",
+    target: "目标",
+    source: "来源",
+    readerBack: "返回资料库",
+    prev: "上一页",
+    next: "下一页",
+    first: "第一页",
+    last: "最后一页",
+    zoomIn: "放大",
+    zoomOut: "缩小",
+    resetZoom: "重置缩放",
+    fitPage: "适应页面",
+    fitWidth: "适应宽度",
+    actualSize: "原始大小",
+    pureMode: "纯阅读",
+    exitPure: "退出纯阅读",
+    externalOpen: "使用外部程序打开",
+    internalViewer: "内置查看器",
+    helpText:
+      "导入文件夹或 CBZ 后可以搜索、收藏和阅读。漫画使用内置阅读器；文本、音频、视频若检测到播放器会自动外部打开，否则使用内置查看器。管理员工具可以整理已导入漫画，也可以扫描一个大文件夹并按分类移动到目标目录。清空库只清空应用索引，不删除原始文件。",
+    categories: {
+      comic: "漫画",
+      text: "文本",
+      audio: "音频",
+      video: "视频",
+      archive: "压缩包",
+      other: "其它"
+    }
+  },
+  en: {
+    appName: "Offline Library",
+    subtitle: "Offline comics and media",
+    importHint: "Imported folders are classified automatically; the built-in viewer is used when no external player is found.",
+    ready: "Library is ready. Search, filter categories, or browse favorites.",
+    search: "Search title or path",
+    importFolder: "Import Folder",
+    importArchive: "Import CBZ / ZIP",
+    all: "All",
+    favorite: "Favorites",
+    library: "Library",
+    visible: "items visible",
+    noContent: "No content yet",
+    noContentHint: "Import a mixed folder and the app will detect comics, text, audio, video, and other files.",
+    externalPlayers: "External Players",
+    windowsDefault: "Built-in / system default",
+    choosePlayer: "Choose player",
+    clearDefault: "Clear player",
+    adminTools: "Admin Tools",
+    compressComicFolders: "Compress folder comics to CBZ",
+    relaunchAdmin: "Relaunch as Admin",
+    organizeImported: "Organize Imported Comics",
+    autoOrganize: "Scan Folder and Classify",
+    clearLibrary: "Clear Library",
+    clearConfirm: "Clear the library? Original files will not be deleted; only the app index and cache will be reset.",
+    help: "Help",
+    github: "GitHub",
+    language: "中文 / English",
+    openOrRead: "Open or read",
+    reveal: "Reveal in folder",
+    remove: "Remove from library",
+    removeDone: "Removed from library. Original files were not deleted.",
+    favorited: "Added to favorites",
+    unfavorited: "Removed from favorites",
+    cancelled: "Cancelled.",
+    clearDone: "Library cleared. Original files were not deleted.",
+    organizeDone: "Organization complete",
+    moved: "moved",
+    compressed: "compressed",
+    skipped: "skipped",
+    target: "target",
+    source: "source",
+    readerBack: "Back to library",
+    prev: "Previous page",
+    next: "Next page",
+    first: "First page",
+    last: "Last page",
+    zoomIn: "Zoom in",
+    zoomOut: "Zoom out",
+    resetZoom: "Reset zoom",
+    fitPage: "Fit page",
+    fitWidth: "Fit width",
+    actualSize: "Actual size",
+    pureMode: "Pure reading",
+    exitPure: "Exit pure mode",
+    externalOpen: "Open externally",
+    internalViewer: "Built-in viewer",
+    helpText:
+      "Import folders or CBZ files, then search, favorite, and read locally. Comics use the built-in reader. Text, audio, and video open with a detected external player when available, otherwise the built-in viewer is used. Admin tools can organize imported comics or scan a large folder and move files into category folders. Clearing the library only resets the app index and cache.",
+    categories: {
+      comic: "Comics",
+      text: "Text",
+      audio: "Audio",
+      video: "Video",
+      archive: "Archives",
+      other: "Other"
+    }
+  }
+};
+
+function defaultSnapshot(): LibrarySnapshot {
+  return {
+    items: [],
+    stats: {
+      items: 0,
+      favorites: 0,
+      pages: 0,
+      categories: { comic: 0, text: 0, audio: 0, video: 0, archive: 0, other: 0 }
+    },
+    settings: { players: {}, detectedPlayers: {}, language: "zh" }
+  };
 }
 
 function pageLabel(page: number, count: number): string {
-  if (count === 0) {
-    return "外部打开";
-  }
-  return `${page + 1} / ${count}`;
-}
-
-function categoryLabel(category: LibraryCategory): string {
-  return categories.find((item) => item.key === category)?.label ?? "其它";
+  return count === 0 ? "0 / 0" : `${page + 1} / ${count}`;
 }
 
 function CategoryIcon({ category, size = 28 }: { category: LibraryCategory; size?: number }): JSX.Element {
@@ -64,24 +207,34 @@ function fileName(filePath: string): string {
   return filePath.split(/[\\/]/).pop() ?? filePath;
 }
 
+function statFromItems(items: LibraryItem[]): LibrarySnapshot["stats"] {
+  return {
+    items: items.length,
+    favorites: items.filter((item) => item.favorite).length,
+    pages: items.reduce((sum, item) => sum + item.pageCount, 0),
+    categories: categoryKeys.reduce(
+      (result, category) => ({ ...result, [category]: items.filter((item) => item.category === category).length }),
+      { comic: 0, text: 0, audio: 0, video: 0, archive: 0, other: 0 } as Record<LibraryCategory, number>
+    )
+  };
+}
+
 function App(): JSX.Element {
-  const [snapshot, setSnapshot] = useState<LibrarySnapshot>({
-    items: [],
-    stats: {
-      items: 0,
-      favorites: 0,
-      pages: 0,
-      categories: { comic: 0, text: 0, audio: 0, video: 0, archive: 0, other: 0 }
-    },
-    settings: { players: {} }
-  });
+  const [snapshot, setSnapshot] = useState<LibrarySnapshot>(defaultSnapshot());
   const [query, setQuery] = useState("");
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [filter, setFilter] = useState<FilterKey>("all");
   const [busy, setBusy] = useState(false);
   const [compressFolders, setCompressFolders] = useState(true);
-  const [notice, setNotice] = useState("导入文件夹后会自动分类；视频、音频和文本会用外部程序打开。");
+  const [zoom, setZoom] = useState(100);
+  const [fitMode, setFitMode] = useState<FitMode>("page");
+  const [pureReading, setPureReading] = useState(false);
+  const [textContent, setTextContent] = useState("");
+
+  const lang: AppLanguage = snapshot.settings.language ?? "zh";
+  const t = copy[lang];
+  const [notice, setNotice] = useState(copy.zh.importHint);
 
   const selectedItem = useMemo(
     () => snapshot.items.find((item) => item.id === selectedItemId) ?? null,
@@ -102,10 +255,12 @@ function App(): JSX.Element {
   }, []);
 
   useEffect(() => {
+    setNotice(copy[lang].importHint);
+  }, [lang]);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (!selectedItem || viewMode !== "reader") {
-        return;
-      }
+      if (!selectedItem || viewMode !== "reader") return;
       if (event.key === "ArrowRight" || event.key === " ") {
         event.preventDefault();
         void goToPage(selectedItem.currentPage + 1);
@@ -114,40 +269,30 @@ function App(): JSX.Element {
         event.preventDefault();
         void goToPage(selectedItem.currentPage - 1);
       }
+      if (event.key === "+") setZoom((value) => Math.min(300, value + 10));
+      if (event.key === "-") setZoom((value) => Math.max(40, value - 10));
+      if (event.key.toLowerCase() === "f") setPureReading((value) => !value);
       if (event.key === "Escape") {
-        setViewMode("grid");
+        pureReading ? setPureReading(false) : setViewMode("grid");
       }
     };
-
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
+  }, [pureReading, selectedItem, viewMode]);
+
+  useEffect(() => {
+    if (!selectedItem || viewMode !== "viewer" || selectedItem.category !== "text") return;
+    void window.comicShelf.readTextFile(selectedItem.sourcePath).then(setTextContent).catch(() => setTextContent(""));
   }, [selectedItem, viewMode]);
 
   async function refreshLibrary(): Promise<void> {
     const data = await window.comicShelf.getLibrary();
     setSnapshot(data);
-    if (data.items.length > 0) {
-      setNotice("资料库已就绪，可以搜索、筛选分类或查看收藏。");
-    }
+    if (data.items.length > 0) setNotice(copy[data.settings.language ?? "zh"].ready);
   }
 
   function updateItems(items: LibraryItem[]): void {
-    setSnapshot((current) => ({
-      ...current,
-      items,
-      stats: {
-        items: items.length,
-        favorites: items.filter((item) => item.favorite).length,
-        pages: items.reduce((sum, item) => sum + item.pageCount, 0),
-        categories: categories.reduce(
-          (result, category) => ({
-            ...result,
-            [category.key]: items.filter((item) => item.category === category.key).length
-          }),
-          { comic: 0, text: 0, audio: 0, video: 0, archive: 0, other: 0 } as Record<LibraryCategory, number>
-        )
-      }
-    }));
+    setSnapshot((current) => ({ ...current, items, stats: statFromItems(items) }));
   }
 
   async function importFolders(): Promise<void> {
@@ -155,7 +300,7 @@ function App(): JSX.Element {
     try {
       const result = await window.comicShelf.importFolders();
       updateItems(result.items);
-      setNotice(`文件夹导入完成：新增 ${result.added} 项，更新 ${result.updated} 项，跳过 ${result.skipped} 项。`);
+      setNotice(`${t.importFolder}: ${t.moved} ${result.added + result.updated}, ${t.skipped} ${result.skipped}`);
     } finally {
       setBusy(false);
     }
@@ -166,49 +311,51 @@ function App(): JSX.Element {
     try {
       const result = await window.comicShelf.importArchives();
       updateItems(result.items);
-      setNotice(`压缩包导入完成：新增 ${result.added} 项，更新 ${result.updated} 项，跳过 ${result.skipped} 项。`);
+      setNotice(`${t.importArchive}: ${t.moved} ${result.added + result.updated}, ${t.skipped} ${result.skipped}`);
     } finally {
       setBusy(false);
     }
   }
 
   async function openItem(item: LibraryItem): Promise<void> {
-    if (item.category !== "comic" || item.pageCount === 0) {
-      const data = await window.comicShelf.openExternal(item.id);
-      setSnapshot(data);
-      setNotice(`已用${snapshot.settings.players[item.category] ? "自定义播放器" : "系统默认程序"}打开《${item.title}》。`);
+    setSelectedItemId(item.id);
+    if (item.category === "comic" && item.pageCount > 0) {
+      setViewMode("reader");
+      await markProgress(item, item.currentPage);
       return;
     }
 
-    setSelectedItemId(item.id);
-    setViewMode("reader");
-    const updated = await window.comicShelf.updateProgress(item.id, item.currentPage);
+    const hasExternal = Boolean(snapshot.settings.players[item.category] ?? snapshot.settings.detectedPlayers[item.category]);
+    if (hasExternal && item.category !== "archive" && item.category !== "other") {
+      const data = await window.comicShelf.openExternal(item.id);
+      setSnapshot(data);
+      return;
+    }
+
+    setViewMode("viewer");
+  }
+
+  async function openExternal(item: LibraryItem): Promise<void> {
+    const data = await window.comicShelf.openExternal(item.id);
+    setSnapshot(data);
+  }
+
+  async function markProgress(item: LibraryItem, page: number): Promise<void> {
+    const nextPage = Math.max(0, Math.min(page, item.pageCount - 1));
+    const updated = await window.comicShelf.updateProgress(item.id, nextPage);
     if (updated) {
-      setSnapshot((current) => ({
-        ...current,
-        items: current.items.map((entry) => (entry.id === updated.id ? updated : entry))
-      }));
+      setSnapshot((current) => ({ ...current, items: current.items.map((entry) => (entry.id === updated.id ? updated : entry)) }));
     }
   }
 
   async function goToPage(page: number): Promise<void> {
-    if (!selectedItem) {
-      return;
-    }
-
-    const updated = await window.comicShelf.updateProgress(selectedItem.id, clampPage(selectedItem, page));
-    if (updated) {
-      setSnapshot((current) => ({
-        ...current,
-        items: current.items.map((entry) => (entry.id === updated.id ? updated : entry))
-      }));
-    }
+    if (selectedItem) await markProgress(selectedItem, page);
   }
 
   async function toggleFavorite(item: LibraryItem): Promise<void> {
     const data = await window.comicShelf.toggleFavorite(item.id);
     setSnapshot(data);
-    setNotice(item.favorite ? `已取消收藏《${item.title}》。` : `已收藏《${item.title}》。`);
+    setNotice(item.favorite ? t.unfavorited : t.favorited);
   }
 
   async function removeItem(item: LibraryItem): Promise<void> {
@@ -218,19 +365,31 @@ function App(): JSX.Element {
       setSelectedItemId(null);
       setViewMode("grid");
     }
-    setNotice(`已从库中移除《${item.title}》。原始文件不会被删除。`);
+    setNotice(t.removeDone);
+  }
+
+  async function clearLibrary(): Promise<void> {
+    if (!window.confirm(t.clearConfirm)) return;
+    const next = await window.comicShelf.clearLibrary();
+    setSnapshot(next);
+    setSelectedItemId(null);
+    setViewMode("grid");
+    setNotice(t.clearDone);
   }
 
   async function setPlayer(category: LibraryCategory): Promise<void> {
     const settings = await window.comicShelf.setPlayer(category);
     setSnapshot((current) => ({ ...current, settings }));
-    setNotice(`${categoryLabel(category)}的外部播放器已更新。`);
   }
 
   async function clearPlayer(category: LibraryCategory): Promise<void> {
     const settings = await window.comicShelf.clearPlayer(category);
     setSnapshot((current) => ({ ...current, settings }));
-    setNotice(`${categoryLabel(category)}已恢复为 Windows 默认打开方式。`);
+  }
+
+  async function setLanguage(language: AppLanguage): Promise<void> {
+    const settings = await window.comicShelf.setLanguage(language);
+    setSnapshot((current) => ({ ...current, settings }));
   }
 
   async function organizeComics(): Promise<void> {
@@ -238,12 +397,24 @@ function App(): JSX.Element {
     try {
       const result = await window.comicShelf.organizeComics(compressFolders);
       updateItems(result.items);
-      if (!result.destinationPath) {
-        setNotice("已取消整理漫画。");
-        return;
-      }
       setNotice(
-        `整理完成：移动 ${result.moved} 项，压缩 ${result.compressed} 项，跳过 ${result.skipped} 项。目标：${result.destinationPath}`
+        result.destinationPath
+          ? `${t.organizeDone}: ${t.moved} ${result.moved}, ${t.compressed} ${result.compressed}, ${t.skipped} ${result.skipped}. ${t.target}: ${result.destinationPath}`
+          : t.cancelled
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function autoOrganizeFolder(): Promise<void> {
+    setBusy(true);
+    try {
+      const result = await window.comicShelf.autoOrganizeFolder();
+      setNotice(
+        result.destinationPath
+          ? `${t.organizeDone}: ${t.moved} ${result.moved}, ${t.skipped} ${result.skipped}. ${t.target}: ${result.destinationPath}`
+          : t.cancelled
       );
     } finally {
       setBusy(false);
@@ -251,125 +422,153 @@ function App(): JSX.Element {
   }
 
   function playerText(settings: AppSettings, category: LibraryCategory): string {
-    return settings.players[category] ? fileName(settings.players[category]!) : "Windows 默认";
+    const manual = settings.players[category];
+    const detected = settings.detectedPlayers[category];
+    if (manual) return fileName(manual);
+    if (detected) return fileName(detected);
+    return t.windowsDefault;
   }
 
+  function closeReader(): void {
+    setPureReading(false);
+    setViewMode("grid");
+  }
+
+  const shellClass = `app-shell ${pureReading ? "pure-reading" : ""}`;
+  const readerImageClass = `reader-image fit-${fitMode}`;
+
   return (
-    <main className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-mark">
-            <Library size={22} />
+    <main className={shellClass}>
+      {!pureReading && (
+        <aside className="sidebar">
+          <div className="brand">
+            <div className="brand-mark">
+              <Library size={22} />
+            </div>
+            <div>
+              <h1>{t.appName}</h1>
+              <p>{t.subtitle}</p>
+            </div>
           </div>
-          <div>
-            <h1>Offline Library</h1>
-            <p>离线漫画与资料库</p>
+
+          <div className="search-box">
+            <Search size={18} />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t.search} />
           </div>
-        </div>
 
-        <div className="search-box">
-          <Search size={18} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索标题或路径" />
-        </div>
-
-        <div className="actions">
-          <button onClick={importFolders} disabled={busy}>
-            <FolderPlus size={18} />
-            <span>导入文件夹</span>
-          </button>
-          <button onClick={importArchives} disabled={busy}>
-            <PackagePlus size={18} />
-            <span>导入 CBZ / ZIP</span>
-          </button>
-        </div>
-
-        <nav className="filters" aria-label="Library filters">
-          <button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>
-            <Library size={17} />
-            <span>全部</span>
-            <strong>{snapshot.stats.items}</strong>
-          </button>
-          <button className={filter === "favorite" ? "active" : ""} onClick={() => setFilter("favorite")}>
-            <Heart size={17} />
-            <span>收藏</span>
-            <strong>{snapshot.stats.favorites}</strong>
-          </button>
-          {categories.map((category) => (
-            <button
-              className={filter === category.key ? "active" : ""}
-              key={category.key}
-              onClick={() => setFilter(category.key)}
-            >
-              <CategoryIcon category={category.key} size={17} />
-              <span>{category.label}</span>
-              <strong>{snapshot.stats.categories[category.key]}</strong>
+          <div className="actions">
+            <button onClick={importFolders} disabled={busy}>
+              <FolderPlus size={18} />
+              <span>{t.importFolder}</span>
             </button>
-          ))}
-        </nav>
-
-        <section className="player-settings">
-          <div className="settings-title">
-            <Settings size={16} />
-            <span>外部播放器</span>
+            <button onClick={importArchives} disabled={busy}>
+              <PackagePlus size={18} />
+              <span>{t.importArchive}</span>
+            </button>
           </div>
-          {categories
-            .filter((category) => category.key !== "comic")
-            .map((category) => (
-              <div className="player-row" key={category.key}>
-                <span>{category.label}</span>
-                <small title={snapshot.settings.players[category.key] ?? "Windows 默认"}>
-                  {playerText(snapshot.settings, category.key)}
-                </small>
-                <button title="选择播放器" onClick={() => void setPlayer(category.key)}>
-                  <FolderOpen size={15} />
-                </button>
-                <button title="恢复默认" onClick={() => void clearPlayer(category.key)}>
-                  <X size={15} />
-                </button>
-              </div>
+
+          <nav className="filters" aria-label="Library filters">
+            <button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>
+              <Library size={17} />
+              <span>{t.all}</span>
+              <strong>{snapshot.stats.items}</strong>
+            </button>
+            <button className={filter === "favorite" ? "active" : ""} onClick={() => setFilter("favorite")}>
+              <Heart size={17} />
+              <span>{t.favorite}</span>
+              <strong>{snapshot.stats.favorites}</strong>
+            </button>
+            {categoryKeys.map((category) => (
+              <button className={filter === category ? "active" : ""} key={category} onClick={() => setFilter(category)}>
+                <CategoryIcon category={category} size={17} />
+                <span>{t.categories[category]}</span>
+                <strong>{snapshot.stats.categories[category]}</strong>
+              </button>
             ))}
-        </section>
+          </nav>
 
-        <section className="organize-panel">
-          <div className="settings-title">
-            <Shield size={16} />
-            <span>管理员整理</span>
-          </div>
-          <label className="check-row">
-            <input
-              type="checkbox"
-              checked={compressFolders}
-              onChange={(event) => setCompressFolders(event.target.checked)}
-            />
-            <span>文件夹漫画压缩为 CBZ</span>
-          </label>
-          <button className="admin-button" onClick={() => void window.comicShelf.relaunchAsAdmin()} disabled={busy}>
-            <Shield size={16} />
-            <span>管理员模式重启</span>
-          </button>
-          <button className="organize-button" onClick={() => void organizeComics()} disabled={busy}>
-            <FolderOpen size={16} />
-            <span>整理已导入漫画</span>
-          </button>
-        </section>
+          <section className="player-settings">
+            <div className="settings-title">
+              <Settings size={16} />
+              <span>{t.externalPlayers}</span>
+            </div>
+            {categoryKeys
+              .filter((category) => category !== "comic")
+              .map((category) => (
+                <div className="player-row" key={category}>
+                  <span>{t.categories[category]}</span>
+                  <small title={snapshot.settings.players[category] ?? snapshot.settings.detectedPlayers[category] ?? t.windowsDefault}>
+                    {playerText(snapshot.settings, category)}
+                  </small>
+                  <button title={t.choosePlayer} onClick={() => void setPlayer(category)}>
+                    <FolderOpen size={15} />
+                  </button>
+                  <button title={t.clearDefault} onClick={() => void clearPlayer(category)}>
+                    <X size={15} />
+                  </button>
+                </div>
+              ))}
+          </section>
 
-        <p className="notice">{notice}</p>
-      </aside>
+          <section className="organize-panel">
+            <div className="settings-title">
+              <Shield size={16} />
+              <span>{t.adminTools}</span>
+            </div>
+            <label className="check-row">
+              <input type="checkbox" checked={compressFolders} onChange={(event) => setCompressFolders(event.target.checked)} />
+              <span>{t.compressComicFolders}</span>
+            </label>
+            <button className="admin-button" onClick={() => void window.comicShelf.relaunchAsAdmin()} disabled={busy}>
+              <Shield size={16} />
+              <span>{t.relaunchAdmin}</span>
+            </button>
+            <button className="organize-button" onClick={() => void organizeComics()} disabled={busy}>
+              <FolderOpen size={16} />
+              <span>{t.organizeImported}</span>
+            </button>
+            <button className="organize-button secondary" onClick={() => void autoOrganizeFolder()} disabled={busy}>
+              <FolderPlus size={16} />
+              <span>{t.autoOrganize}</span>
+            </button>
+            <button className="danger-button" onClick={() => void clearLibrary()} disabled={busy}>
+              <Trash2 size={16} />
+              <span>{t.clearLibrary}</span>
+            </button>
+          </section>
+
+          <section className="utility-panel">
+            <button onClick={() => void setLanguage(lang === "zh" ? "en" : "zh")}>{t.language}</button>
+            <button onClick={() => setViewMode("help")}>
+              <HelpCircle size={16} />
+              <span>{t.help}</span>
+            </button>
+            <button onClick={() => void window.comicShelf.openGithub()}>
+              <Github size={16} />
+              <span>{t.github}</span>
+            </button>
+          </section>
+
+          <p className="notice">{notice}</p>
+        </aside>
+      )}
 
       {viewMode === "grid" && (
         <section className="library-view">
           <header className="topbar">
             <div>
-              <h2>{filter === "favorite" ? "收藏" : filter === "all" ? "资料库" : categoryLabel(filter)}</h2>
-              <p>{filteredItems.length} 项可见</p>
+              <h2>{filter === "favorite" ? t.favorite : filter === "all" ? t.library : t.categories[filter]}</h2>
+              <p>
+                {filteredItems.length} {t.visible}
+              </p>
             </div>
           </header>
 
           {filteredItems.length === 0 ? (
             <div className="empty-state">
               <BookOpen size={42} />
-              <h2>还没有可显示的内容</h2>
-              <p>导入一个混合文件夹，应用会自动识别漫画、文本、音频、视频和其它文件。</p>
+              <h2>{t.noContent}</h2>
+              <p>{t.noContentHint}</p>
             </div>
           ) : (
             <div className="book-grid">
@@ -387,22 +586,25 @@ function App(): JSX.Element {
                   </button>
                   <div className="book-meta">
                     <div className="meta-line">
-                      <span>{categoryLabel(item.category)}</span>
-                      <span>{pageLabel(item.currentPage, item.pageCount)}</span>
+                      <span>{t.categories[item.category]}</span>
+                      <span>{item.category === "comic" ? pageLabel(item.currentPage, item.pageCount) : t.internalViewer}</span>
                     </div>
                     <h3 title={item.title}>{item.title}</h3>
                   </div>
                   <div className="book-tools">
-                    <button title={item.favorite ? "取消收藏" : "收藏"} onClick={() => void toggleFavorite(item)}>
+                    <button title={item.favorite ? t.unfavorited : t.favorite} onClick={() => void toggleFavorite(item)}>
                       <Heart size={16} fill={item.favorite ? "currentColor" : "none"} />
                     </button>
-                    <button title="打开或阅读" onClick={() => void openItem(item)}>
+                    <button title={t.openOrRead} onClick={() => void openItem(item)}>
                       <Play size={16} />
                     </button>
-                    <button title="打开所在位置" onClick={() => void window.comicShelf.revealInExplorer(item.sourcePath)}>
+                    <button title={t.externalOpen} onClick={() => void openExternal(item)}>
+                      <Maximize2 size={16} />
+                    </button>
+                    <button title={t.reveal} onClick={() => void window.comicShelf.revealInExplorer(item.sourcePath)}>
                       <FolderOpen size={16} />
                     </button>
-                    <button title="从库中移除" onClick={() => void removeItem(item)}>
+                    <button title={t.remove} onClick={() => void removeItem(item)}>
                       <Trash2 size={16} />
                     </button>
                   </div>
@@ -413,40 +615,119 @@ function App(): JSX.Element {
         </section>
       )}
 
-      {viewMode === "reader" && selectedItem && (
+      {viewMode === "help" && (
+        <section className="help-view">
+          <header className="topbar">
+            <div>
+              <h2>{t.help}</h2>
+              <p>{t.github}: https://github.com/haoy633-star/Offline-text-repository-</p>
+            </div>
+          </header>
+          <div className="help-content">
+            <p>{t.helpText}</p>
+            <button onClick={() => void window.comicShelf.openGithub()}>
+              <Github size={17} />
+              <span>{t.github}</span>
+            </button>
+          </div>
+        </section>
+      )}
+
+      {viewMode === "viewer" && selectedItem && (
         <section className="reader-view">
           <header className="reader-bar">
-            <button title="返回资料库" onClick={() => setViewMode("grid")}>
+            <button title={t.readerBack} onClick={closeReader}>
               <X size={19} />
             </button>
             <div>
               <h2>{selectedItem.title}</h2>
-              <p>{pageLabel(selectedItem.currentPage, selectedItem.pageCount)}</p>
+              <p>{t.internalViewer}</p>
             </div>
-            <div className="reader-actions">
-              <button title="上一页" onClick={() => void goToPage(selectedItem.currentPage - 1)}>
-                <ChevronLeft size={20} />
-              </button>
-              <input
-                type="range"
-                min={0}
-                max={Math.max(0, selectedItem.pageCount - 1)}
-                value={selectedItem.currentPage}
-                onChange={(event) => void goToPage(Number(event.target.value))}
-              />
-              <button title="下一页" onClick={() => void goToPage(selectedItem.currentPage + 1)}>
-                <ChevronRight size={20} />
-              </button>
-            </div>
+            <button onClick={() => void openExternal(selectedItem)}>
+              <Maximize2 size={18} />
+              <span>{t.externalOpen}</span>
+            </button>
           </header>
+          <div className="internal-viewer">
+            {selectedItem.category === "video" && <video src={window.comicShelf.assetUrl(selectedItem.sourcePath)} controls />}
+            {selectedItem.category === "audio" && <audio src={window.comicShelf.assetUrl(selectedItem.sourcePath)} controls />}
+            {selectedItem.category === "text" && <pre>{textContent}</pre>}
+            {!["video", "audio", "text"].includes(selectedItem.category) && (
+              <button onClick={() => void openExternal(selectedItem)}>
+                <Maximize2 size={18} />
+                <span>{t.externalOpen}</span>
+              </button>
+            )}
+          </div>
+        </section>
+      )}
 
+      {viewMode === "reader" && selectedItem && (
+        <section className="reader-view">
+          {!pureReading && (
+            <header className="reader-bar">
+              <button title={t.readerBack} onClick={closeReader}>
+                <X size={19} />
+              </button>
+              <div>
+                <h2>{selectedItem.title}</h2>
+                <p>{pageLabel(selectedItem.currentPage, selectedItem.pageCount)}</p>
+              </div>
+              <div className="reader-actions">
+                <button title={t.first} onClick={() => void goToPage(0)}>
+                  <ChevronsLeft size={20} />
+                </button>
+                <button title={t.prev} onClick={() => void goToPage(selectedItem.currentPage - 1)}>
+                  <ChevronLeft size={20} />
+                </button>
+                <input
+                  type="range"
+                  min={0}
+                  max={Math.max(0, selectedItem.pageCount - 1)}
+                  value={selectedItem.currentPage}
+                  onChange={(event) => void goToPage(Number(event.target.value))}
+                />
+                <button title={t.next} onClick={() => void goToPage(selectedItem.currentPage + 1)}>
+                  <ChevronRight size={20} />
+                </button>
+                <button title={t.last} onClick={() => void goToPage(selectedItem.pageCount - 1)}>
+                  <ChevronsRight size={20} />
+                </button>
+                <button title={t.zoomOut} onClick={() => setZoom((value) => Math.max(40, value - 10))}>
+                  <Minus size={18} />
+                </button>
+                <span className="zoom-label">{zoom}%</span>
+                <button title={t.zoomIn} onClick={() => setZoom((value) => Math.min(300, value + 10))}>
+                  <Plus size={18} />
+                </button>
+                <button title={t.resetZoom} onClick={() => setZoom(100)}>
+                  <RotateCcw size={18} />
+                </button>
+                <select value={fitMode} onChange={(event) => setFitMode(event.target.value as FitMode)}>
+                  <option value="page">{t.fitPage}</option>
+                  <option value="width">{t.fitWidth}</option>
+                  <option value="actual">{t.actualSize}</option>
+                </select>
+                <button title={t.pureMode} onClick={() => setPureReading(true)}>
+                  <Maximize2 size={18} />
+                </button>
+              </div>
+            </header>
+          )}
+          {pureReading && (
+            <button className="exit-pure" onClick={() => setPureReading(false)}>
+              {t.exitPure}
+            </button>
+          )}
           <div className="page-stage">
-            <button className="page-hitbox left" title="上一页" onClick={() => void goToPage(selectedItem.currentPage - 1)} />
+            <button className="page-hitbox left" title={t.prev} onClick={() => void goToPage(selectedItem.currentPage - 1)} />
             <img
+              className={readerImageClass}
+              style={{ ["--zoom" as string]: `${zoom}%`, ["--zoom-scale" as string]: String(zoom / 100) }}
               src={window.comicShelf.assetUrl(selectedItem.pagePaths[selectedItem.currentPage])}
               alt={`${selectedItem.title} page ${selectedItem.currentPage + 1}`}
             />
-            <button className="page-hitbox right" title="下一页" onClick={() => void goToPage(selectedItem.currentPage + 1)} />
+            <button className="page-hitbox right" title={t.next} onClick={() => void goToPage(selectedItem.currentPage + 1)} />
           </div>
         </section>
       )}

@@ -8,7 +8,9 @@ import { basename, dirname, extname, join, parse, relative, resolve } from "node
 import { pathToFileURL } from "node:url";
 import JSZip from "jszip";
 import type {
+  AppLanguage,
   AppSettings,
+  AutoOrganizeResult,
   ImportResult,
   LibraryCategory,
   LibraryFile,
@@ -23,6 +25,14 @@ const audioExtensions = new Set([".mp3", ".flac", ".wav", ".m4a", ".aac", ".ogg"
 const videoExtensions = new Set([".mp4", ".mkv", ".avi", ".mov", ".wmv", ".webm", ".m4v"]);
 const archiveExtensions = new Set([".cbz", ".zip"]);
 const playableCategories = new Set<LibraryCategory>(["text", "audio", "video", "archive", "other"]);
+const categoryFolders: Record<LibraryCategory, string> = {
+  comic: "Comics",
+  text: "Text",
+  audio: "Audio",
+  video: "Video",
+  archive: "Archives",
+  other: "Other"
+};
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -94,13 +104,57 @@ function toLibraryFile(filePath: string): LibraryFile {
   };
 }
 
+async function detectPlayers(): Promise<Partial<Record<LibraryCategory, string>>> {
+  const candidates: Array<{ category: LibraryCategory; paths: string[] }> = [
+    {
+      category: "video",
+      paths: [
+        "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe",
+        "C:\\Program Files\\DAUM\\PotPlayer\\PotPlayerMini64.exe",
+        "C:\\Program Files\\MPC-HC\\mpc-hc64.exe",
+        "C:\\Program Files\\Windows Media Player\\wmplayer.exe"
+      ]
+    },
+    {
+      category: "audio",
+      paths: [
+        "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe",
+        "C:\\Program Files\\Windows Media Player\\wmplayer.exe",
+        "C:\\Program Files\\foobar2000\\foobar2000.exe",
+        "C:\\Program Files\\AIMP\\AIMP.exe"
+      ]
+    },
+    {
+      category: "text",
+      paths: [
+        "C:\\Program Files\\SumatraPDF\\SumatraPDF.exe",
+        "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE"
+      ]
+    }
+  ];
+  const detected: Partial<Record<LibraryCategory, string>> = {};
+
+  for (const group of candidates) {
+    const found = group.paths.find((candidate) => existsSync(candidate));
+    if (found) {
+      detected[group.category] = found;
+    }
+  }
+
+  return detected;
+}
+
 async function readSettings(): Promise<AppSettings> {
   try {
     const raw = await readFile(settingsPath(), "utf8");
     const data = JSON.parse(raw) as AppSettings;
-    return { players: data.players ?? {} };
+    return {
+      players: data.players ?? {},
+      detectedPlayers: await detectPlayers(),
+      language: data.language ?? "zh"
+    };
   } catch {
-    return { players: {} };
+    return { players: {}, detectedPlayers: await detectPlayers(), language: "zh" };
   }
 }
 
@@ -394,7 +448,7 @@ async function mergeImports(imports: Array<LibraryItem | null>): Promise<ImportR
 async function openWithPlayer(item: LibraryItem): Promise<void> {
   const settings = await readSettings();
   const targetPath = item.sourceType === "archive" && item.category === "comic" ? item.sourcePath : item.sourcePath;
-  const customPlayer = settings.players[item.category];
+  const customPlayer = settings.players[item.category] ?? settings.detectedPlayers[item.category];
 
   item.lastOpenedAt = now();
   const items = await readLibrary();
@@ -528,6 +582,100 @@ async function organizeComics(compressFolders: boolean): Promise<OrganizeResult>
   return { moved, compressed, skipped, destinationPath: destinationRoot, items: (await snapshot(nextItems)).items };
 }
 
+async function categoryForOrganizing(filePath: string): Promise<LibraryCategory> {
+  if (isArchive(filePath)) {
+    try {
+      const zip = await JSZip.loadAsync(await readFile(filePath));
+      const hasImages = Object.values(zip.files).some((entry) => !entry.dir && isImage(entry.name));
+      return hasImages ? "comic" : "archive";
+    } catch {
+      return "archive";
+    }
+  }
+
+  return categoryForExtension(filePath);
+}
+
+async function autoOrganizeFolder(): Promise<AutoOrganizeResult> {
+  const sourceSelection = await dialog.showOpenDialog(mainWindow!, {
+    title: "Choose source folder to classify",
+    properties: ["openDirectory"]
+  });
+  if (sourceSelection.canceled || !sourceSelection.filePaths[0]) {
+    return emptyAutoOrganizeResult(null, null);
+  }
+
+  const destinationSelection = await dialog.showOpenDialog(mainWindow!, {
+    title: "Choose destination folder",
+    properties: ["openDirectory", "createDirectory"]
+  });
+  if (destinationSelection.canceled || !destinationSelection.filePaths[0]) {
+    return emptyAutoOrganizeResult(resolve(sourceSelection.filePaths[0]), null);
+  }
+
+  const sourceRoot = resolve(sourceSelection.filePaths[0]);
+  const destinationRoot = resolve(destinationSelection.filePaths[0]);
+  const relativeDestination = relative(sourceRoot, destinationRoot);
+  if (relativeDestination && !relativeDestination.startsWith("..")) {
+    return { ...emptyAutoOrganizeResult(sourceRoot, destinationRoot), skipped: 1 };
+  }
+  const counts: Record<LibraryCategory, number> = { comic: 0, text: 0, audio: 0, video: 0, archive: 0, other: 0 };
+  let moved = 0;
+  let skipped = 0;
+
+  for (const folderName of Object.values(categoryFolders)) {
+    await mkdir(join(destinationRoot, folderName), { recursive: true });
+  }
+
+  const entries = await readdir(sourceRoot, { withFileTypes: true });
+  for (const entry of entries) {
+    const entryPath = join(sourceRoot, entry.name);
+    try {
+      if (entry.isDirectory()) {
+        const files = await findFilesInFolder(entryPath);
+        const imageCount = files.filter(isImage).length;
+        if (imageCount >= Math.max(2, files.length * 0.5)) {
+          const destinationPath = await uniquePath(join(destinationRoot, categoryFolders.comic), basename(entryPath));
+          await movePath(entryPath, destinationPath, true);
+          counts.comic += 1;
+          moved += 1;
+        } else {
+          for (const filePath of files) {
+            const category = await categoryForOrganizing(filePath);
+            const destinationPath = await uniquePath(
+              join(destinationRoot, categoryFolders[category], relative(sourceRoot, dirname(filePath))),
+              basename(filePath)
+            );
+            await movePath(filePath, destinationPath, false);
+            counts[category] += 1;
+            moved += 1;
+          }
+        }
+      } else if (entry.isFile()) {
+        const category = await categoryForOrganizing(entryPath);
+        const destinationPath = await uniquePath(join(destinationRoot, categoryFolders[category]), basename(entryPath));
+        await movePath(entryPath, destinationPath, false);
+        counts[category] += 1;
+        moved += 1;
+      }
+    } catch {
+      skipped += 1;
+    }
+  }
+
+  return { moved, skipped, sourcePath: sourceRoot, destinationPath: destinationRoot, categories: counts };
+}
+
+function emptyAutoOrganizeResult(sourcePath: string | null, destinationPath: string | null): AutoOrganizeResult {
+  return {
+    moved: 0,
+    skipped: 0,
+    sourcePath,
+    destinationPath,
+    categories: { comic: 0, text: 0, audio: 0, video: 0, archive: 0, other: 0 }
+  };
+}
+
 function relaunchAsAdmin(): void {
   const exePath = process.execPath;
   const args = app.isPackaged ? "" : `-ArgumentList '${process.argv.slice(1).join("','").replace(/'/g, "''")}'`;
@@ -649,8 +797,18 @@ app.whenReady().then(() => {
     return snapshot(await readLibrary());
   });
 
+  ipcMain.handle("library:clear", async () => {
+    await writeLibrary([]);
+    await rm(importCachePath(), { recursive: true, force: true });
+    return snapshot([]);
+  });
+
   ipcMain.handle("library:organize-comics", async (_, compressFolders: boolean) => {
     return organizeComics(compressFolders);
+  });
+
+  ipcMain.handle("library:auto-organize-folder", async () => {
+    return autoOrganizeFolder();
   });
 
   ipcMain.handle("app:relaunch-admin", async () => {
@@ -689,8 +847,23 @@ app.whenReady().then(() => {
     return settings;
   });
 
+  ipcMain.handle("settings:set-language", async (_, language: AppLanguage) => {
+    const settings = await readSettings();
+    settings.language = language;
+    await writeSettings(settings);
+    return readSettings();
+  });
+
   ipcMain.handle("file:reveal", async (_, filePath: string) => {
     shell.showItemInFolder(filePath);
+  });
+
+  ipcMain.handle("file:read-text", async (_, filePath: string) => {
+    return readFile(filePath, "utf8");
+  });
+
+  ipcMain.handle("app:open-github", async () => {
+    await shell.openExternal("https://github.com/haoy633-star/Offline-text-repository-");
   });
 
   createWindow();
