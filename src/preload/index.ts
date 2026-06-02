@@ -24,6 +24,7 @@ const api = {
   autoOrganizeFolder: (): Promise<AutoOrganizeResult> => ipcRenderer.invoke("library:auto-organize-folder"),
   removeItem: (itemId: string): Promise<LibrarySnapshot> => ipcRenderer.invoke("library:remove", itemId),
   relaunchAsAdmin: (): Promise<void> => ipcRenderer.invoke("app:relaunch-admin"),
+  setFullscreen: (enabled: boolean): Promise<void> => ipcRenderer.invoke("app:set-fullscreen", enabled),
   setPlayer: (category: LibraryCategory): Promise<AppSettings> => ipcRenderer.invoke("settings:set-player", category),
   clearPlayer: (category: LibraryCategory): Promise<AppSettings> => ipcRenderer.invoke("settings:clear-player", category),
   setLanguage: (language: AppLanguage): Promise<AppSettings> => ipcRenderer.invoke("settings:set-language", language),

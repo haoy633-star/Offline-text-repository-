@@ -1,5 +1,5 @@
 export type LibrarySourceType = "folder" | "archive" | "file";
-export type LibraryCategory = "comic" | "text" | "audio" | "video" | "archive" | "other";
+export type LibraryCategory = "comic" | "image" | "text" | "audio" | "video" | "archive" | "other";
 export type AppLanguage = "zh" | "en";
 
 export interface LibraryFile {

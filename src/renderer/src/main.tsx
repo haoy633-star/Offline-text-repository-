@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FileArchive,
+  FileImage,
   FileText,
   FolderOpen,
   FolderPlus,
@@ -36,7 +37,7 @@ type ViewMode = "grid" | "reader" | "viewer" | "help";
 type FilterKey = "all" | "favorite" | LibraryCategory;
 type FitMode = "page" | "width" | "actual";
 
-const categoryKeys: LibraryCategory[] = ["comic", "text", "audio", "video", "archive", "other"];
+const categoryKeys: LibraryCategory[] = ["comic", "image", "text", "audio", "video", "archive", "other"];
 
 const copy = {
   zh: {
@@ -89,6 +90,7 @@ const copy = {
     zoomIn: "放大",
     zoomOut: "缩小",
     resetZoom: "重置缩放",
+    fullscreen: "全屏阅读",
     fitPage: "适应页面",
     fitWidth: "适应宽度",
     actualSize: "原始大小",
@@ -97,9 +99,10 @@ const copy = {
     externalOpen: "使用外部程序打开",
     internalViewer: "内置查看器",
     helpText:
-      "导入文件夹或 CBZ 后可以搜索、收藏和阅读。漫画使用内置阅读器；文本、音频、视频若检测到播放器会自动外部打开，否则使用内置查看器。管理员工具可以整理已导入漫画，也可以扫描一个大文件夹并按分类移动到目标目录。清空库只清空应用索引，不删除原始文件。",
+      "导入文件夹：选择一个漫画文件夹或混合资料文件夹。多张图片组成的文件夹会被识别为漫画；散落在根目录的单张图片会归入图片分类。导入 CBZ / ZIP：用于导入漫画压缩包。收藏：点爱心后会出现在收藏筛选中。阅读器：方向键或空格翻页，第一页/最后一页按钮可快速跳转，缩放按钮可调整显示比例，适应页面/适应宽度/原始大小用于处理不同图片比例。纯阅读/全屏阅读会隐藏侧边栏、顶部工具栏和系统菜单。外部播放器：如果检测到 VLC、PotPlayer、Windows Media Player、SumatraPDF 等会自动使用；也可以手动指定。管理员工具：整理已导入漫画只处理库里已有漫画；扫描大文件夹并分类会把来源文件夹里的文件移动到目标目录下的 Comics、Images、Text、Audio、Video、Archives、Other。清空库只清空索引和缓存，不删除原始文件。",
     categories: {
       comic: "漫画",
+      image: "图片",
       text: "文本",
       audio: "音频",
       video: "视频",
@@ -157,6 +160,7 @@ const copy = {
     zoomIn: "Zoom in",
     zoomOut: "Zoom out",
     resetZoom: "Reset zoom",
+    fullscreen: "Fullscreen reading",
     fitPage: "Fit page",
     fitWidth: "Fit width",
     actualSize: "Actual size",
@@ -165,9 +169,10 @@ const copy = {
     externalOpen: "Open externally",
     internalViewer: "Built-in viewer",
     helpText:
-      "Import folders or CBZ files, then search, favorite, and read locally. Comics use the built-in reader. Text, audio, and video open with a detected external player when available, otherwise the built-in viewer is used. Admin tools can organize imported comics or scan a large folder and move files into category folders. Clearing the library only resets the app index and cache.",
+      "Import Folder: choose a comic folder or a mixed folder. A folder with multiple images is treated as a comic; loose single images are placed in Images. Import CBZ / ZIP: import comic archives. Favorites: click the heart to keep an item in the Favorites filter. Reader: use arrow keys or Space to turn pages, first/last buttons for quick jumps, zoom controls for scale, and fit-page/fit-width/actual-size modes for different image ratios. Pure/fullscreen reading hides the sidebar, toolbar, and system menu. External players: the app auto-detects common players such as VLC, PotPlayer, Windows Media Player, and SumatraPDF, while manual player selection is still available. Admin tools: Organize Imported Comics only touches comics already in the library; Scan Folder and Classify moves files from a source folder into Comics, Images, Text, Audio, Video, Archives, and Other. Clear Library resets only the app index and cache.",
     categories: {
       comic: "Comics",
+      image: "Images",
       text: "Text",
       audio: "Audio",
       video: "Video",
@@ -184,7 +189,7 @@ function defaultSnapshot(): LibrarySnapshot {
       items: 0,
       favorites: 0,
       pages: 0,
-      categories: { comic: 0, text: 0, audio: 0, video: 0, archive: 0, other: 0 }
+      categories: { comic: 0, image: 0, text: 0, audio: 0, video: 0, archive: 0, other: 0 }
     },
     settings: { players: {}, detectedPlayers: {}, language: "zh" }
   };
@@ -196,6 +201,7 @@ function pageLabel(page: number, count: number): string {
 
 function CategoryIcon({ category, size = 28 }: { category: LibraryCategory; size?: number }): JSX.Element {
   if (category === "comic") return <BookOpen size={size} />;
+  if (category === "image") return <FileImage size={size} />;
   if (category === "text") return <FileText size={size} />;
   if (category === "audio") return <Music size={size} />;
   if (category === "video") return <Video size={size} />;
@@ -214,7 +220,7 @@ function statFromItems(items: LibraryItem[]): LibrarySnapshot["stats"] {
     pages: items.reduce((sum, item) => sum + item.pageCount, 0),
     categories: categoryKeys.reduce(
       (result, category) => ({ ...result, [category]: items.filter((item) => item.category === category).length }),
-      { comic: 0, text: 0, audio: 0, video: 0, archive: 0, other: 0 } as Record<LibraryCategory, number>
+      { comic: 0, image: 0, text: 0, audio: 0, video: 0, archive: 0, other: 0 } as Record<LibraryCategory, number>
     )
   };
 }
@@ -230,6 +236,7 @@ function App(): JSX.Element {
   const [zoom, setZoom] = useState(100);
   const [fitMode, setFitMode] = useState<FitMode>("page");
   const [pureReading, setPureReading] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
   const [textContent, setTextContent] = useState("");
 
   const lang: AppLanguage = snapshot.settings.language ?? "zh";
@@ -271,9 +278,11 @@ function App(): JSX.Element {
       }
       if (event.key === "+") setZoom((value) => Math.min(300, value + 10));
       if (event.key === "-") setZoom((value) => Math.max(40, value - 10));
-      if (event.key.toLowerCase() === "f") setPureReading((value) => !value);
+      if (event.key.toLowerCase() === "f") {
+        pureReading ? void exitPureReading() : void enterFullscreenReading();
+      }
       if (event.key === "Escape") {
-        pureReading ? setPureReading(false) : setViewMode("grid");
+        pureReading ? void exitPureReading() : setViewMode("grid");
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -300,6 +309,7 @@ function App(): JSX.Element {
     try {
       const result = await window.comicShelf.importFolders();
       updateItems(result.items);
+      setViewMode("grid");
       setNotice(`${t.importFolder}: ${t.moved} ${result.added + result.updated}, ${t.skipped} ${result.skipped}`);
     } finally {
       setBusy(false);
@@ -311,6 +321,7 @@ function App(): JSX.Element {
     try {
       const result = await window.comicShelf.importArchives();
       updateItems(result.items);
+      setViewMode("grid");
       setNotice(`${t.importArchive}: ${t.moved} ${result.added + result.updated}, ${t.skipped} ${result.skipped}`);
     } finally {
       setBusy(false);
@@ -319,7 +330,7 @@ function App(): JSX.Element {
 
   async function openItem(item: LibraryItem): Promise<void> {
     setSelectedItemId(item.id);
-    if (item.category === "comic" && item.pageCount > 0) {
+    if ((item.category === "comic" || item.category === "image") && item.pageCount > 0) {
       setViewMode("reader");
       await markProgress(item, item.currentPage);
       return;
@@ -397,6 +408,7 @@ function App(): JSX.Element {
     try {
       const result = await window.comicShelf.organizeComics(compressFolders);
       updateItems(result.items);
+      setViewMode("grid");
       setNotice(
         result.destinationPath
           ? `${t.organizeDone}: ${t.moved} ${result.moved}, ${t.compressed} ${result.compressed}, ${t.skipped} ${result.skipped}. ${t.target}: ${result.destinationPath}`
@@ -411,6 +423,7 @@ function App(): JSX.Element {
     setBusy(true);
     try {
       const result = await window.comicShelf.autoOrganizeFolder();
+      setViewMode("grid");
       setNotice(
         result.destinationPath
           ? `${t.organizeDone}: ${t.moved} ${result.moved}, ${t.skipped} ${result.skipped}. ${t.target}: ${result.destinationPath}`
@@ -431,7 +444,29 @@ function App(): JSX.Element {
 
   function closeReader(): void {
     setPureReading(false);
+    setFullscreen(false);
+    void window.comicShelf.setFullscreen(false);
     setViewMode("grid");
+  }
+
+  function showLibrary(nextFilter?: FilterKey): void {
+    if (nextFilter) setFilter(nextFilter);
+    setPureReading(false);
+    setFullscreen(false);
+    void window.comicShelf.setFullscreen(false);
+    setViewMode("grid");
+  }
+
+  async function enterFullscreenReading(): Promise<void> {
+    setPureReading(true);
+    setFullscreen(true);
+    await window.comicShelf.setFullscreen(true);
+  }
+
+  async function exitPureReading(): Promise<void> {
+    setPureReading(false);
+    setFullscreen(false);
+    await window.comicShelf.setFullscreen(false);
   }
 
   const shellClass = `app-shell ${pureReading ? "pure-reading" : ""}`;
@@ -468,18 +503,18 @@ function App(): JSX.Element {
           </div>
 
           <nav className="filters" aria-label="Library filters">
-            <button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>
+            <button className={filter === "all" ? "active" : ""} onClick={() => showLibrary("all")}>
               <Library size={17} />
               <span>{t.all}</span>
               <strong>{snapshot.stats.items}</strong>
             </button>
-            <button className={filter === "favorite" ? "active" : ""} onClick={() => setFilter("favorite")}>
+            <button className={filter === "favorite" ? "active" : ""} onClick={() => showLibrary("favorite")}>
               <Heart size={17} />
               <span>{t.favorite}</span>
               <strong>{snapshot.stats.favorites}</strong>
             </button>
             {categoryKeys.map((category) => (
-              <button className={filter === category ? "active" : ""} key={category} onClick={() => setFilter(category)}>
+              <button className={filter === category ? "active" : ""} key={category} onClick={() => showLibrary(category)}>
                 <CategoryIcon category={category} size={17} />
                 <span>{t.categories[category]}</span>
                 <strong>{snapshot.stats.categories[category]}</strong>
@@ -577,6 +612,8 @@ function App(): JSX.Element {
                   <button className="cover-button" onClick={() => void openItem(item)}>
                     {item.coverPath ? (
                       <img src={window.comicShelf.assetUrl(item.coverPath)} alt={item.title} loading="lazy" />
+                    ) : item.category === "video" ? (
+                      <video className="cover-video" src={window.comicShelf.assetUrl(item.sourcePath)} preload="metadata" muted />
                     ) : (
                       <div className="missing-cover">
                         <CategoryIcon category={item.category} size={38} />
@@ -587,7 +624,7 @@ function App(): JSX.Element {
                   <div className="book-meta">
                     <div className="meta-line">
                       <span>{t.categories[item.category]}</span>
-                      <span>{item.category === "comic" ? pageLabel(item.currentPage, item.pageCount) : t.internalViewer}</span>
+                      <span>{item.category === "comic" || item.category === "image" ? pageLabel(item.currentPage, item.pageCount) : t.internalViewer}</span>
                     </div>
                     <h3 title={item.title}>{item.title}</h3>
                   </div>
@@ -708,14 +745,14 @@ function App(): JSX.Element {
                   <option value="width">{t.fitWidth}</option>
                   <option value="actual">{t.actualSize}</option>
                 </select>
-                <button title={t.pureMode} onClick={() => setPureReading(true)}>
+                <button title={t.fullscreen} onClick={() => void enterFullscreenReading()}>
                   <Maximize2 size={18} />
                 </button>
               </div>
             </header>
           )}
           {pureReading && (
-            <button className="exit-pure" onClick={() => setPureReading(false)}>
+            <button className="exit-pure" onClick={() => void exitPureReading()}>
               {t.exitPure}
             </button>
           )}

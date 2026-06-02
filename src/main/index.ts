@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from "electron";
+import { app, BrowserWindow, Menu, dialog, ipcMain, net, protocol, shell } from "electron";
 import { electronApp, optimizer } from "@electron-toolkit/utils";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -27,6 +27,7 @@ const archiveExtensions = new Set([".cbz", ".zip"]);
 const playableCategories = new Set<LibraryCategory>(["text", "audio", "video", "archive", "other"]);
 const categoryFolders: Record<LibraryCategory, string> = {
   comic: "Comics",
+  image: "Images",
   text: "Text",
   audio: "Audio",
   video: "Video",
@@ -79,7 +80,7 @@ function titleFromPath(filePath: string): string {
 
 function categoryForExtension(filePath: string): LibraryCategory {
   const extension = extname(filePath).toLowerCase();
-  if (imageExtensions.has(extension)) return "comic";
+  if (imageExtensions.has(extension)) return "image";
   if (textExtensions.has(extension)) return "text";
   if (audioExtensions.has(extension)) return "audio";
   if (videoExtensions.has(extension)) return "video";
@@ -170,7 +171,7 @@ function migrateItem(raw: Partial<Omit<LibraryItem, "sourceType">> & { sourceTyp
 
   const sourceType = raw.sourceType === "cbz" ? "archive" : (raw.sourceType as LibraryItem["sourceType"]) || "file";
   const pagePaths = raw.pagePaths ?? [];
-  const category = raw.category ?? (pagePaths.length > 0 ? "comic" : categoryForExtension(raw.sourcePath));
+  const category = raw.category ?? (pagePaths.length > 1 ? "comic" : categoryForExtension(raw.sourcePath));
 
   return {
     id: raw.id,
@@ -214,6 +215,7 @@ async function snapshot(items: LibraryItem[]): Promise<LibrarySnapshot> {
   });
   const categories: Record<LibraryCategory, number> = {
     comic: 0,
+    image: 0,
     text: 0,
     audio: 0,
     video: 0,
@@ -322,9 +324,9 @@ async function createFileItem(filePath: string, existing: LibraryItem | undefine
     sourceType: "file",
     sourcePath: absolutePath,
     category: file.category,
-    coverPath: file.category === "comic" ? absolutePath : null,
-    pagePaths: file.category === "comic" ? [absolutePath] : [],
-    pageCount: file.category === "comic" ? 1 : 0,
+    coverPath: file.category === "image" ? absolutePath : null,
+    pagePaths: file.category === "image" ? [absolutePath] : [],
+    pageCount: file.category === "image" ? 1 : 0,
     files: [file],
     addedAt: existing?.addedAt ?? timestamp,
     updatedAt: timestamp,
@@ -382,6 +384,7 @@ async function createArchiveItem(archivePath: string, existing: LibraryItem | un
 async function createItemsFromFolder(rootPath: string, existingItems: LibraryItem[]): Promise<Array<LibraryItem | null>> {
   const absoluteRoot = resolve(rootPath);
   const entries = await readdir(absoluteRoot, { withFileTypes: true });
+  const hasDirectories = entries.some((entry) => entry.isDirectory());
   const currentById = new Map(existingItems.map((item) => [item.id, item]));
   const result: Array<LibraryItem | null> = [];
   const looseFiles: string[] = [];
@@ -404,7 +407,7 @@ async function createItemsFromFolder(rootPath: string, existingItems: LibraryIte
   }
 
   const rootImages = looseFiles.filter(isImage);
-  if (rootImages.length >= 2 && rootImages.length >= looseFiles.length * 0.5) {
+  if (!hasDirectories && rootImages.length >= 2 && rootImages.length >= looseFiles.length * 0.5) {
     result.push(createComicItemFromPages(absoluteRoot, rootImages, currentById.get(hash(`folder:${absoluteRoot}:loose-images`))));
   } else {
     for (const filePath of looseFiles) {
@@ -619,7 +622,7 @@ async function autoOrganizeFolder(): Promise<AutoOrganizeResult> {
   if (relativeDestination && !relativeDestination.startsWith("..")) {
     return { ...emptyAutoOrganizeResult(sourceRoot, destinationRoot), skipped: 1 };
   }
-  const counts: Record<LibraryCategory, number> = { comic: 0, text: 0, audio: 0, video: 0, archive: 0, other: 0 };
+  const counts: Record<LibraryCategory, number> = { comic: 0, image: 0, text: 0, audio: 0, video: 0, archive: 0, other: 0 };
   let moved = 0;
   let skipped = 0;
 
@@ -672,7 +675,7 @@ function emptyAutoOrganizeResult(sourcePath: string | null, destinationPath: str
     skipped: 0,
     sourcePath,
     destinationPath,
-    categories: { comic: 0, text: 0, audio: 0, video: 0, archive: 0, other: 0 }
+    categories: { comic: 0, image: 0, text: 0, audio: 0, video: 0, archive: 0, other: 0 }
   };
 }
 
@@ -695,6 +698,7 @@ function createWindow(): void {
     minHeight: 680,
     backgroundColor: "#111214",
     title: "Offline Comic Shelf",
+    autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, "../preload/index.mjs"),
       sandbox: false
@@ -712,6 +716,7 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   electronApp.setAppUserModelId("io.github.haoy633star.offlinecomicshelf");
+  Menu.setApplicationMenu(null);
 
   protocol.handle("manga", (request) => {
     const url = new URL(request.url);
@@ -813,6 +818,10 @@ app.whenReady().then(() => {
 
   ipcMain.handle("app:relaunch-admin", async () => {
     relaunchAsAdmin();
+  });
+
+  ipcMain.handle("app:set-fullscreen", async (_, enabled: boolean) => {
+    mainWindow?.setFullScreen(enabled);
   });
 
   ipcMain.handle("library:remove", async (_, itemId: string) => {
