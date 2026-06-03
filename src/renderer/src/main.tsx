@@ -2130,12 +2130,11 @@ function App(): JSX.Element {
                     </label>
                   </>
                 )}
-                <button title={t.fullscreen} onClick={() => void enterFullscreenReading()}>
+                <button className="viewer-icon-button" title={t.fullscreen} onClick={() => void enterFullscreenReading()}>
                   <Maximize2 size={18} />
                 </button>
-                <button onClick={() => void openExternal(selectedItem)}>
+                <button className="viewer-icon-button" title={t.externalOpen} onClick={() => void openExternal(selectedItem)}>
                   <Maximize2 size={18} />
-                  <span>{t.externalOpen}</span>
                 </button>
               </div>
             </header>
@@ -2189,7 +2188,11 @@ function App(): JSX.Element {
             {selectedItem.category === "text" &&
               (documentKindForPath(selectedItem.sourcePath) === "pdf" ? (
                 <div className="document-reader pdf-reader">
-                  <iframe className="document-frame" src={window.comicShelf.assetUrl(selectedItem.sourcePath)} title={selectedItem.title} />
+                  <iframe
+                    className="document-frame"
+                    src={`${window.comicShelf.assetUrl(selectedItem.sourcePath)}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
+                    title={selectedItem.title}
+                  />
                 </div>
               ) : textContent ? (
                 <div className="document-reader text-reader-shell" style={documentTextStyle}>
