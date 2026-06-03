@@ -1,288 +1,182 @@
-# Offline Library / 离线漫画与资料库
+# Offline Library
 
-Offline Library is a local-first Windows desktop app for people who keep comics, novels, audio, video, and mixed folders on their own computer.
+Offline Library is a Windows desktop app for organizing and reading local comics, images, text, audio, video, and series folders. It is built for people who download files to their own computer and want fast offline search, covers, favorites, tags, archive tools, and a better comic reader.
 
-Offline Library 是一款本地优先的 Windows 桌面应用，适合把漫画、小说、音频、视频和混合文件夹都保存在自己电脑上的用户。
+中文：Offline Library 是一款 Windows 本地离线资料库软件，用来整理和阅读你电脑里的漫画、图片、文本、音频、视频和电视剧/系列文件夹。它适合喜欢把文件下载到电脑上离线观看、希望快速搜索、显示封面、收藏、打标签、归档压缩和使用更好漫画阅读器的用户。
 
-## What It Does / 它能做什么
+日本語：Offline Library は Windows 向けのローカル資料ライブラリアプリです。PC 内の漫画、画像、テキスト、音声、動画、シリーズフォルダーを整理し、オフライン検索、表紙表示、お気に入り、タグ、归档、圧縮、漫画リーダーを使いやすくします。
 
-| English | 中文 |
-| --- | --- |
-| Import folders and automatically classify files. | 导入文件夹后自动分类文件。 |
-| Read image-folder comics and CBZ/ZIP comics inside the app. | 在应用内阅读图片文件夹漫画和 CBZ/ZIP 漫画。 |
-| Open text, audio, video, archives, and other files with an external program. | 文本、音频、视频、压缩包和其它文件会用外部程序打开。 |
-| Choose a custom player or reader for each category. | 可以为每个分类设置自定义播放器或阅读器。 |
-| Fall back to the Windows default app when no custom player is set. | 没有设置自定义程序时，会使用 Windows 默认打开方式。 |
-| Favorite items for quick access later. | 可以收藏内容，方便下次快速找到。 |
-| Search by title or original file path. | 支持按标题或原始路径搜索。 |
-| Organize imported comics into one chosen folder. | 可以把已导入的漫画整理到指定文件夹。 |
-| Compress folder-based comics into `.cbz` archives. | 可以把原本是文件夹的漫画压缩成 `.cbz`。 |
-| Clear the app library without deleting original files. | 可以清空应用库，但不会删除原始文件。 |
-| Scan a large folder and move files into category folders. | 可以扫描大文件夹，并把文件移动到对应分类文件夹。 |
-| Use a built-in comic reader, text viewer, audio player, and video player. | 内置漫画阅读器、文本查看器、音频播放器和视频播放器。 |
-| Switch between Chinese and English inside the app. | 应用内支持中英文切换。 |
-| Separate comic folders from loose image files. | 区分漫画文件夹和散落图片。 |
-| Preview videos with an in-app video cover. | 视频在书架中显示视频预览封面。 |
-| Show import progress, elapsed time, and estimated remaining time. | 导入时显示进度、已用时间和预计剩余时间。 |
-| Preview plain text files on library cards. | 文本文件在卡片上显示内容预览。 |
-| Sort by A-Z, Z-A, newest, oldest, or recently opened. | 支持按 A-Z、Z-A、最新、最早、最近打开排序。 |
-| Add custom tags to library items and filter by tag. | 支持给作品添加自定义标签，并按标签筛选。 |
-| Optional cover cache for faster library previews. | 可选封面缓存，加快书架预览加载。 |
-| High performance mode for very large libraries. | 面向超大资料库的高性能模式。 |
+## Download
 
-## Automatic Categories / 自动分类
+### English
 
-The app detects content by file extension and folder contents.
-
-应用会根据文件扩展名和文件夹内容自动判断分类。
-
-| Category | 中文分类 | Examples |
-| --- | --- | --- |
-| Comics | 漫画 | folders with multiple comic pages, `.cbz`, `.zip` with images |
-| Images | 图片 | loose `.jpg`, `.png`, `.webp`, `.gif` files |
-| Text | 文本 | `.txt`, `.md`, `.pdf`, `.epub`, `.docx` |
-| Audio | 音频 | `.mp3`, `.flac`, `.wav`, `.m4a` |
-| Video | 视频 | `.mp4`, `.mkv`, `.avi`, `.mov` |
-| Series | 电视剧 | folders with multiple video episodes |
-| Archives | 压缩包 | `.zip` files without comic images |
-| Other | 其它 | Files that do not match the known groups |
-
-When a selected folder mostly contains images, it becomes one comic item. If a comic has chapter folders inside it, the importer can treat the root folder as one comic when most child folders contain images. Loose images inside a mixed folder are imported as Images instead of being forced into a comic.
-
-如果你选择的是一个主要由图片组成的文件夹，它会被当作一本漫画。如果漫画下面还有章节子文件夹，导入器会在大多数子文件夹都包含图片时把根目录识别为一本漫画。混合文件夹里的散图会被归入图片分类，不会强行合成漫画。
-
-## Download / 下载方法
-
-### Quick Download / 快速下载
-
-For beginners, use the Windows installer:
-
-小白用户建议使用 Windows 安装版：
+For normal users, download the Windows installer:
 
 - `downloads/Offline-Library-1.0.0-x64-Setup.exe`
 
-After downloading, double-click the installer and follow the setup wizard.
+The GitHub Release also includes:
 
-下载后双击安装包，按安装向导操作即可。
+- `Offline-Library-1.0.0-x64-Setup.exe`
+- `Offline-Library-1.0.0-Guide-中文-English-日本語.md`
 
-The installer uses a guided setup. It lets you choose the install location and whether to create shortcuts. New installer builds use the same app id and installer guid, so installing a newer version upgrades/replaces the older installed version instead of creating a separate app entry. If an older installation is detected, the installer shows an upgrade notice and closes the running old app before continuing.
+Double-click the installer and follow the setup wizard. If an older version is already installed, the installer shows an upgrade notice, closes the running old app, and upgrades the existing installation instead of creating a duplicate app.
 
-GitHub Release assets include the installer and `Offline-Library-1.0.0-Guide-中文-English-日本語.md`, which explains the app in Chinese, English, and Japanese.
+### 中文
 
-安装版使用向导模式。打开安装包后可以选择安装位置，也可以选择是否创建快捷方式。新版安装包使用固定应用标识和安装器标识，会升级/替换旧安装版，而不是创建一个重复软件。
+普通用户建议下载 Windows 安装版：
 
-### Option 1: Download Source Code / 下载源码
+- `downloads/Offline-Library-1.0.0-x64-Setup.exe`
 
-1. Open the GitHub repository page.
-2. Click `Code`.
-3. Click `Download ZIP`.
-4. Extract the ZIP file.
+GitHub Release 附件中也会包含：
 
-中文：
+- `Offline-Library-1.0.0-x64-Setup.exe`
+- `Offline-Library-1.0.0-Guide-中文-English-日本語.md`
 
-1. 打开这个 GitHub 仓库页面。
-2. 点击绿色的 `Code` 按钮。
-3. 点击 `Download ZIP`。
-4. 解压下载后的压缩包。
+下载后双击安装包，按安装向导操作即可。如果电脑上已经安装过旧版本，安装器会提示正在升级旧版本，自动关闭正在运行的旧程序，并升级原有安装，而不是重复安装一个新软件。
 
-### Option 2: Clone With Git / 使用 Git 克隆
+### 日本語
 
-```bash
-git clone https://github.com/haoy633-star/Offline-text-repository-.git
-cd Offline-text-repository-
-```
+通常のユーザーは Windows インストーラーをダウンロードしてください。
 
-### Option 3: Build a Windows Installer / 自己打包 Windows 安装包
+- `downloads/Offline-Library-1.0.0-x64-Setup.exe`
+
+GitHub Release の添付ファイルにも以下が含まれます。
+
+- `Offline-Library-1.0.0-x64-Setup.exe`
+- `Offline-Library-1.0.0-Guide-中文-English-日本語.md`
+
+インストーラーをダブルクリックし、セットアップ画面に従ってください。旧バージョンがある場合はアップグレード通知を表示し、実行中の旧アプリを閉じてから既存のインストールを更新します。
+
+## Main Features
+
+### English
+
+- Import comic folders, mixed folders, CBZ, and ZIP archives.
+- Automatically classify Comics, Images, Text, Audio, Video, Series, Archives, and Other files.
+- Search by title, file path, and tags.
+- Sort by A-Z, Z-A, newest import, oldest import, or recently opened.
+- Add favorites and custom tags.
+- Use page mode or scroll mode for the library shelf.
+- Choose how many cards appear per row.
+- Preview covers, text snippets, and video still images.
+- Use the built-in comic/image reader with quick page turning, zoom, fit page, fit width, and fullscreen reading.
+- Use the built-in text/audio/video viewer, or configure external players.
+- Use high performance mode, cover cache, and preload all content for large libraries.
+- Choose an archive folder and move imported resources into category folders.
+- Compress folder comics into readable CBZ files.
+- Use editor mode to bulk-select resources, rename real files/folders, create a new comic folder from loose images, or delete real disk files.
+- Open independent reference image windows from the reader. Reference windows stay visible even when the main app is minimized to the system tray.
+- Minimize to system tray instead of fully exiting.
+- Switch the app UI between Chinese, English, and Japanese.
+
+### 中文
+
+- 导入漫画文件夹、混合文件夹、CBZ 和 ZIP 压缩包。
+- 自动分类漫画、图片、文本、音频、视频、电视剧/系列、压缩包和其他文件。
+- 按标题、文件路径和 tag 搜索。
+- 支持 A-Z、Z-A、最新导入、最早导入、最近打开排序。
+- 支持收藏和自定义 tag。
+- 书架支持翻页模式和滚动模式。
+- 可以选择每排显示多少卡片。
+- 支持封面预览、文本预览和视频静态预览。
+- 内置漫画/图片阅读器，支持快速翻页、缩放、适应页面、适应宽度和全屏阅读。
+- 内置文本、音频、视频查看器，也可以配置外部播放器。
+- 大型资料库可以开启高性能模式、封面缓存和预加载全部内容。
+- 可以选择归档目录，把已导入资源移动到分类文件夹。
+- 可以把文件夹漫画压缩成可阅读的 CBZ 文件。
+- 编辑者模式支持批量选择资源、重命名真实文件/文件夹、把散图新建成漫画文件夹、删除真实磁盘文件。
+- 阅读器中可以把当前图片打开为独立参考图窗口。主窗口最小化到系统托盘后，参考图仍然会留在桌面上。
+- 关闭主窗口时会最小化到系统托盘，而不是直接退出。
+- 应用界面支持中文、English、日本語三种语言切换。
+
+### 日本語
+
+- 漫画フォルダー、混在フォルダー、CBZ、ZIP アーカイブを取り込めます。
+- 漫画、画像、テキスト、音声、動画、シリーズ、圧縮ファイル、その他を自動分類します。
+- タイトル、ファイルパス、タグで検索できます。
+- A-Z、Z-A、新しい取り込み順、古い取り込み順、最近開いた順で並び替えできます。
+- お気に入りとカスタムタグに対応します。
+- ライブラリはページ表示とスクロール表示を切り替えできます。
+- 1 行に表示するカード数を選べます。
+- 表紙、テキスト抜粋、動画の静止画プレビューを表示できます。
+- 内蔵漫画/画像リーダーはページ移動、ズーム、ページ合わせ、幅合わせ、全画面読書に対応します。
+- テキスト、音声、動画は内蔵ビューアーまたは外部プレイヤーで開けます。
+- 大量ファイル向けに高性能モード、表紙キャッシュ、全コンテンツのプリロードを使えます。
+- 归档フォルダーを選び、取り込み済みリソースを分類フォルダーへ移動できます。
+- フォルダー漫画を読み取り可能な CBZ ファイルに圧縮できます。
+- 編集者モードでは複数選択、実ファイル/フォルダー名の変更、単独画像から新しい漫画フォルダー作成、実ディスクファイル削除ができます。
+- リーダーから現在の画像を独立した参考画像ウィンドウとして開けます。メインアプリをシステムトレイに最小化しても参考画像は画面に残ります。
+- メインウィンドウを閉じると完全終了ではなくシステムトレイへ最小化します。
+- アプリ UI は中文、English、日本語に切り替えできます。
+
+## Categories
+
+| Category | 中文 | 日本語 | Examples |
+| --- | --- | --- | --- |
+| Comics | 漫画 | 漫画 | folders with many images, CBZ/ZIP with images |
+| Images | 图片 | 画像 | loose JPG, PNG, WEBP, GIF files |
+| Text | 文本 | テキスト | TXT, MD, PDF, EPUB, DOCX |
+| Audio | 音频 | 音声 | MP3, FLAC, WAV, M4A |
+| Video | 视频 | 動画 | MP4, MKV, AVI, MOV |
+| Series | 电视剧/系列 | シリーズ | folders with multiple video episodes |
+| Archives | 压缩包 | 圧縮ファイル | ZIP without comic images |
+| Other | 其他 | その他 | unknown file types |
+
+## How To Use
+
+### English
+
+1. Install and open Offline Library.
+2. Click Import Folder to import a comic folder or mixed media folder.
+3. Click Import CBZ / ZIP to import compressed comic archives.
+4. Use the left sidebar to filter categories and favorites.
+5. Use search, sort, tag filter, page mode, scroll mode, and per-row controls to browse.
+6. Click a comic or image to open the built-in reader.
+7. Click Use as reference in the reader to create a separate reference image window.
+8. Use Resource Tools to choose an archive folder, compress folder comics, classify imported resources, enable cache, or preload all content.
+9. Use Editor mode carefully. Rename, delete, and create-comic operations change real files on disk.
+10. Close the main window to minimize to tray. Use Quit app to fully exit.
+
+### 中文
+
+1. 安装并打开 Offline Library。
+2. 点击“导入文件夹”，导入漫画文件夹或混合媒体文件夹。
+3. 点击“导入 CBZ / ZIP”，导入压缩漫画包。
+4. 使用左侧栏筛选分类和收藏。
+5. 使用搜索、排序、Tag 筛选、翻页模式、滚动模式、每排数量来浏览。
+6. 点击漫画或图片，进入内置阅读器。
+7. 在阅读器中点击“作为参考图”，可以创建独立参考图窗口。
+8. 在资源工具中选择归档目录、压缩文件夹漫画、分类已导入资源、启用缓存或预加载全部内容。
+9. 谨慎使用编辑者模式。重命名、删除、散图新建漫画会修改磁盘上的真实文件。
+10. 关闭主窗口会最小化到托盘。需要完全退出时点击“退出软件”。
+
+### 日本語
+
+1. Offline Library をインストールして開きます。
+2. 「フォルダー取り込み」で漫画フォルダーまたは混在フォルダーを取り込みます。
+3. 「CBZ / ZIP 取り込み」で圧縮漫画アーカイブを取り込みます。
+4. 左側バーで分類とお気に入りを絞り込みます。
+5. 検索、並び替え、タグ、ページ表示、スクロール表示、1 行のカード数を使って閲覧します。
+6. 漫画または画像をクリックして内蔵リーダーを開きます。
+7. リーダーで「参考画像にする」を押すと、独立した参考画像ウィンドウを作成できます。
+8. リソースツールで归档フォルダー、漫画圧縮、分類、キャッシュ、プリロードを設定できます。
+9. 編集者モードは慎重に使ってください。名前変更、削除、画像から漫画作成は実際のディスクファイルを変更します。
+10. メインウィンドウを閉じるとトレイへ最小化します。完全終了は終了ボタンを使います。
+
+## Build From Source
 
 ```bash
 npm install
+npm run build
 npm run dist
 ```
 
-The installer will be generated in the `release` folder.
+The installer is generated in `release/`.
 
-安装包会生成在 `release` 文件夹中。
+中文：安装包会生成在 `release/` 文件夹中。
 
-Current local build output / 当前本机打包输出：
+日本語：インストーラーは `release/` フォルダーに生成されます。
 
-- `downloads/Offline-Library-1.0.0-x64-Setup.exe`: installer / 安装版
-- `release/win-unpacked/Offline Library.exe`: unpacked app executable / 解压目录里的直接启动程序
-
-## Development / 开发运行
-
-Install dependencies:
-
-安装依赖：
-
-```bash
-npm install
-```
-
-Run in development mode:
-
-开发模式运行：
-
-```bash
-npm run dev
-```
-
-Build the app:
-
-构建应用：
-
-```bash
-npm run build
-```
-
-## How To Use / 使用方法
-
-### Main Library / 主资料库
-
-The library grid is the main screen. Every card represents one imported resource: a comic, image, text file, audio file, video file, archive, or other file.
-
-主资料库是软件的主界面。每张卡片代表一个已经导入的资源：漫画、图片、文本、音频、视频、压缩包或其它文件。
-
-1. Launch the app.
-2. Click `导入文件夹` to import a folder that contains comics, text files, audio, video, or mixed content.
-3. Click `导入 CBZ / ZIP` to import comic archives.
-4. Use the left sidebar to filter `全部`, `收藏`, `漫画`, `文本`, `音频`, `视频`, `压缩包`, or `其它`.
-5. Click the heart button to favorite an item.
-6. Click the play/read button to open an item.
-7. For comics, the app opens the built-in reader.
-8. For text, audio, video, archives, and other files, the app opens an external program.
-9. In `外部播放器`, choose a custom program for each category, or clear it to use the Windows default app.
-10. In `管理员整理`, click `管理员模式重启` when you need elevated permissions, then click `整理已导入漫画`.
-11. Enable `文件夹漫画压缩为 CBZ` if you want folder comics compressed while organizing.
-12. Click `扫描大文件夹并分类` to choose a messy source folder and a destination folder. The app will move files into `Comics`, `Images`, `Text`, `Audio`, `Video`, `Archives`, and `Other`.
-13. Click `清空库` to reset the app index and cache. Original files stay where they are.
-14. Use `中文 / English` to switch the interface language.
-15. Use `GitHub` inside the app to open the project page.
-16. Use the sort controls to choose A-Z, Z-A, newest, oldest, or recently opened order.
-17. Use the tag button on an item card to add comma-separated custom tags.
-18. Enable cover cache from Admin Tools if you want faster cover previews and can accept a small cache.
-19. Use `每排数量 / Per row` to choose 4, 5, or 6 cards per row.
-20. Use `显示模式 / Mode` to switch between page-style browsing and scroll-style browsing.
-21. Video and Series cards show lightweight in-app video previews. Series folders preview the first episode and open with an episode selector.
-
-### Card Buttons / 卡片按钮
-
-- Heart / 爱心：add or remove from Favorites / 加入或取消收藏。
-- Play / 播放：open the item. Comics and images open in the built-in reader; other files use detected/custom players when possible.
-- External open / 外部打开：force the item to open in an external app or Windows default app.
-- Tag / 标签：edit custom tags. Enter tags separated by commas, for example `read, favorite, author`.
-- Folder / 文件夹：reveal the original file location in Windows Explorer.
-- Trash / 移除：remove from the app library only. Original files are not deleted.
-
-### Sorting And Tags / 排序与标签
-
-Use the sort dropdown at the top of the library to choose `A-Z`, `Z-A`, newest import, oldest import, or recently opened. Use the Tag dropdown to filter by a custom tag. Tags are useful for read status, author, favorite type, translation group, or anything personal.
-
-顶部排序下拉框可以选择 `A-Z`、`Z-A`、最新导入、最早导入、最近打开。Tag 下拉框可以按自定义标签筛选。标签适合记录已读/未读、作者、喜好、汉化组、题材等。
-
-Use `Per row` to reduce or increase how many cards appear in each row. `Scroll` is the classic full scrolling shelf. `Pages` is a separate fixed-screen mode that renders only the current page, shows three rows, and preloads nearby covers before you turn the page. Lower card counts and page-style browsing are recommended for libraries with thousands of files.
-
-可以用 `每排数量` 控制每行显示 4、5 或 6 个卡片。`滚动` 是经典完整滚动书架；`翻页` 是独立的固定屏幕模式，只渲染当前页，显示三排，并会提前加载相邻页面的封面。文件很多时建议使用较少的每排数量和翻页模式。
-
-### Admin Tools / 管理员工具
-
-These tools may move files. Read the confirmation dialog carefully before continuing.
-
-这些工具可能会移动文件。继续前请仔细阅读确认窗口。
-
-- `压缩/归档已导入资源`: choose a destination folder, then move imported resources into category subfolders. If compression is enabled, folder comics are converted to CBZ. This changes the original file locations.
-- `归档并分类已导入资源`: choose the final archive/classification destination yourself. It moves imported resources into `Comics`, `Images`, `Text`, `Audio`, `Video`, `Series`, `Archives`, and `Other`.
-- `选择归档目录`: point the app at an existing archived library folder. The app will scan that folder automatically on startup/refresh.
-- `文件夹漫画压缩为 CBZ`: when enabled, folder-based comics are compressed to `.cbz`; after successful compression, the original comic folder is removed.
-- Cover cache / 封面缓存：off by default. When enabled, the app caches optimized WebP cover previews only, not full books. You can choose the cache folder, disable it, and clear it later.
-- High performance mode / 高性能模式：recommended when importing thousands of files. It uses more memory, enables cover caching, and renders the shelf in pages instead of drawing every item at once.
-
-- `压缩/归档已导入资源`：选择目标文件夹后，把当前库里的资源移动到分类子文件夹；如果开启压缩，会把文件夹漫画转成 CBZ。原文件位置会改变。
-- `归档并分类已导入资源`：面向整个库的大整理操作，你可以自己选择最终归档分类位置；它会移动已导入资源到 `Comics`、`Images`、`Text`、`Audio`、`Video`、`Series`、`Archives`、`Other`。
-- `选择归档目录`：指定一个已经归档好的资料库目录。应用会在启动/刷新时自动扫描这个目录。
-- `文件夹漫画压缩为 CBZ`：开启后，文件夹漫画会被压缩成 `.cbz`；压缩成功后原漫画文件夹会被删除。
-- 封面缓存：默认关闭。开启后只缓存优化后的 WebP 封面预览，不缓存整本漫画；可以自定义缓存目录，也可随时关闭并清除。
-- 高性能模式：如果导入了几千到上万文件，建议开启。它会占用更多内存、启用封面缓存，并把书架分页渲染，避免一次性显示所有卡片导致卡顿。
-
-中文简版：
-
-1. 打开应用。
-2. 点 `导入文件夹`，选择你的漫画/小说/音频/视频混合文件夹。
-3. 点 `导入 CBZ / ZIP`，导入漫画压缩包。
-4. 在左侧选择 `全部`、`收藏` 或某个分类。
-5. 点爱心收藏内容。
-6. 点播放/阅读按钮打开内容。
-7. 漫画会在应用内阅读。
-8. 文本、音频、视频等会启动外部播放器或 Windows 默认程序。
-9. 在 `外部播放器` 区域可以给每个分类设置你喜欢的软件。
-10. 如果要整理散落在电脑各处的漫画，先点 `管理员模式重启`。
-11. 点 `整理已导入漫画`，选择目标文件夹；如果勾选 `文件夹漫画压缩为 CBZ`，文件夹漫画会被压缩后移动。
-12. 点 `扫描大文件夹并分类`，先选择杂乱的大文件夹，再选择目标文件夹，应用会自动移动到漫画、图片、文本、音频、视频等分类目录。
-13. 点 `清空库` 可以重置应用内书架和缓存，但不会删除你的原始文件。
-14. 点 `中文 / English` 可以切换界面语言。
-15. 点 `GitHub` 可以打开项目主页。
-16. 在顶部排序控件里选择 A-Z、Z-A、最新、最早或最近打开。
-17. 点卡片上的标签按钮，可以输入逗号分隔的自定义标签。
-18. 如果希望封面预览加载更快，可以在管理员工具里启用封面缓存；它默认关闭，只缓存封面预览。
-
-## Organizing Comics / 整理漫画说明
-
-The organizer only processes comic items that are already imported into the app. It does not scan or move unrelated files by itself.
-
-整理功能只处理当前已经导入应用的漫画项目，不会主动扫描或移动无关文件。
-
-When compression is enabled, folder comics are written to `.cbz` archives in the chosen destination folder, and the original imported comic folder is removed after the archive is created successfully.
-
-开启压缩时，文件夹漫画会被写成 `.cbz` 文件放进目标文件夹；压缩成功后，原来的漫画文件夹会被删除，以节省空间。
-
-The large-folder classifier is different: it asks for a source folder and a destination folder, then moves files into category folders. Do not choose a destination folder inside the source folder.
-
-大文件夹分类功能是另一种整理方式：它会让你选择来源文件夹和目标文件夹，然后按分类移动文件。不要把目标文件夹选在来源文件夹内部。
-
-## Built-In Viewer / 内置查看器
-
-The built-in comic reader supports quick page turning, first/last page buttons, zoom, fit-to-page, fit-to-width, actual-size mode, and fullscreen pure reading mode. The app hides the native menu bar for a cleaner reading feel.
-
-内置漫画阅读器支持快速翻页、第一页/最后一页、缩放、适应页面、适应宽度、原始大小和全屏纯阅读模式。应用会隐藏原生菜单栏，让阅读界面更干净。
-
-For text, audio, and video files, the app first checks manually configured players and common installed players. If no external player is available, it uses the built-in viewer/player.
-
-文本、音频和视频会优先使用手动设置的外部程序和自动检测到的常见播放器。如果没有可用外部程序，就使用内置查看器/播放器。
-
-## Current Limitations / 当前限制
-
-| English | 中文 |
-| --- | --- |
-| CBR is not supported yet. | 暂不支持 CBR。 |
-| Some very large folders may still take time during the first import scan. | 超大文件夹首次导入扫描仍可能需要一些时间。 |
-| Very large libraries should use high performance mode, cover cache, page-style browsing, and a smaller per-row card count. | 超大资料库建议开启高性能模式、封面缓存、翻页式浏览，并降低每排卡片数量。 |
-
-## Done Recently / 最近已推进
-
-- Detailed in-app help / 更详细的应用内使用方法
-- Chinese and English UI switch / 中英文界面切换
-- Fullscreen pure reading mode / 全屏纯阅读模式
-- Dark scrollbars and reader sliders / 深色滚动条和阅读滑条
-- Video preview covers in the library / 书架视频预览封面
-- Separate Images category for loose image files / 散图独立图片分类
-- Hide native File/Edit/View menu in the app window / 隐藏原生窗口菜单栏
-- Import progress overlay with a do-not-exit warning / 导入进度遮罩和不要退出提示
-- Reader toolbar fix for very long Japanese/Chinese titles / 修复超长中日文标题挤出阅读器工具栏的问题
-- Plain text preview snippets / 纯文本预览摘要
-- Sorting controls / 排序控件
-- Custom tags and tag filters / 自定义标签和标签筛选
-- Optional cover cache / 可选封面缓存
-- Nested comic folder detection / 多层漫画文件夹识别
-- High performance mode and paged shelf rendering / 高性能模式和分页书架渲染
-- Multi-comic parent folder import, such as `Example_2019_ArtPack` and `Example_2020_ArtPack_Vol2` as separate items / 多漫画父文件夹导入，会把类似 `Example_2019_ArtPack` 和 `Example_2020_ArtPack_Vol2` 识别为独立作品
-- Series folder category for TV/drama folders with multiple video files / 多视频电视剧文件夹会归入独立剧集分类
-- Configurable cards per row and page/scroll browsing mode / 可选择每排卡片数量，并可切换翻页或滚动浏览
-- Lightweight video previews for Video and Series cards / 视频和电视剧卡片支持轻量视频预览
-- Series built-in playback with episode selector / 电视剧内置播放和选集列表
-- Guided Windows installer with install location and shortcut choices / Windows 安装向导支持选择安装位置和快捷方式
-- True separated Scroll and Pages shelf modes / 滚动和翻页书架模式真正分离
-- WebP cover cache with custom cache folder / WebP 封面缓存和自定义缓存目录
-- Compression mode now rebuilds readable CBZ library entries / 压缩模式会重建可阅读的 CBZ 库条目
-
-## License / 许可证
+## License
 
 MIT
