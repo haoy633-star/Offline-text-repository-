@@ -929,11 +929,16 @@ function App(): JSX.Element {
   const [selectedEpisodePath, setSelectedEpisodePath] = useState<string | null>(null);
   const [pageDraft, setPageDraft] = useState("1");
   const [readerPageDraft, setReaderPageDraft] = useState("1");
+  const [pdfPageDraft, setPdfPageDraft] = useState("1");
+  const [pdfPage, setPdfPage] = useState(1);
+  const [pdfZoom, setPdfZoom] = useState(100);
+  const [pdfFitWidth, setPdfFitWidth] = useState(true);
   const [editorMode, setEditorMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showGithubCard, setShowGithubCard] = useState(false);
   const gridRef = useRef<HTMLDivElement | null>(null);
   const documentScrollRef = useRef<HTMLDivElement | null>(null);
+  const pdfFrameRef = useRef<HTMLIFrameElement | null>(null);
   const readingSaveTimer = useRef<number | null>(null);
   const [, setProgressTick] = useState(0);
 
@@ -1127,6 +1132,14 @@ function App(): JSX.Element {
     );
   }, [selectedItem]);
 
+  useEffect(() => {
+    if (!selectedItem || selectedItem.category !== "text" || documentKindForPath(selectedItem.sourcePath) !== "pdf") return;
+    setPdfPage(1);
+    setPdfPageDraft("1");
+    setPdfZoom(100);
+    setPdfFitWidth(true);
+  }, [selectedItem?.id, selectedItem?.sourcePath]);
+
   async function refreshLibrary(): Promise<void> {
     const data = await window.comicShelf.getLibrary();
     setSnapshot(data);
@@ -1269,6 +1282,36 @@ function App(): JSX.Element {
     const nextPage = Math.max(1, Math.min(selectedItem.pageCount, value));
     setReaderPageDraft(String(nextPage));
     void goToPage(nextPage - 1);
+  }
+
+  function jumpToPdfPage(): void {
+    const value = Number.parseInt(pdfPageDraft, 10);
+    if (!Number.isFinite(value)) {
+      setPdfPageDraft(String(pdfPage));
+      return;
+    }
+    const nextPage = Math.max(1, value);
+    setPdfPage(nextPage);
+    setPdfPageDraft(String(nextPage));
+  }
+
+  function changePdfPage(delta: number): void {
+    const nextPage = Math.max(1, pdfPage + delta);
+    setPdfPage(nextPage);
+    setPdfPageDraft(String(nextPage));
+  }
+
+  function pdfSource(filePath: string): string {
+    const zoom = pdfFitWidth ? "page-width" : String(pdfZoom);
+    return `${window.comicShelf.assetUrl(filePath)}#toolbar=0&navpanes=0&page=${pdfPage}&zoom=${zoom}`;
+  }
+
+  function printPdf(): void {
+    try {
+      pdfFrameRef.current?.contentWindow?.print();
+    } catch {
+      if (selectedItem) void openExternal(selectedItem);
+    }
   }
 
   async function toggleFavorite(item: LibraryItem): Promise<void> {
@@ -2074,6 +2117,63 @@ function App(): JSX.Element {
                 <p>{t.internalViewer}</p>
               </div>
               <div className="reader-actions document-actions">
+                {selectedItem.category === "text" && documentKindForPath(selectedItem.sourcePath) === "pdf" && (
+                  <>
+                    <button title={t.prev} onClick={() => changePdfPage(-1)}>
+                      <ChevronLeft size={18} />
+                    </button>
+                    <label className="reader-page-jump pdf-page-jump" title={t.jumpPage}>
+                      <span>{t.page}</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={pdfPageDraft}
+                        onChange={(event) => setPdfPageDraft(event.target.value)}
+                        onBlur={jumpToPdfPage}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") jumpToPdfPage();
+                        }}
+                      />
+                    </label>
+                    <button title={t.next} onClick={() => changePdfPage(1)}>
+                      <ChevronRight size={18} />
+                    </button>
+                    <button
+                      title={t.zoomOut}
+                      onClick={() => {
+                        setPdfFitWidth(false);
+                        setPdfZoom((value) => Math.max(25, value - 10));
+                      }}
+                    >
+                      <Minus size={17} />
+                    </button>
+                    <span className="zoom-label">{pdfFitWidth ? t.fitWidth : `${pdfZoom}%`}</span>
+                    <button
+                      title={t.zoomIn}
+                      onClick={() => {
+                        setPdfFitWidth(false);
+                        setPdfZoom((value) => Math.min(300, value + 10));
+                      }}
+                    >
+                      <Plus size={17} />
+                    </button>
+                    <button title={t.fitWidth} onClick={() => setPdfFitWidth(true)}>
+                      <ChevronsRight size={17} />
+                    </button>
+                    <button
+                      title={t.resetZoom}
+                      onClick={() => {
+                        setPdfFitWidth(false);
+                        setPdfZoom(100);
+                      }}
+                    >
+                      <RotateCcw size={17} />
+                    </button>
+                    <button title="Print" onClick={printPdf}>
+                      <FileText size={17} />
+                    </button>
+                  </>
+                )}
                 {selectedItem.category === "text" && documentKindForPath(selectedItem.sourcePath) !== "pdf" && (
                   <>
                     <label>
@@ -2189,8 +2289,9 @@ function App(): JSX.Element {
               (documentKindForPath(selectedItem.sourcePath) === "pdf" ? (
                 <div className="document-reader pdf-reader">
                   <iframe
+                    ref={pdfFrameRef}
                     className="document-frame"
-                    src={`${window.comicShelf.assetUrl(selectedItem.sourcePath)}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
+                    src={pdfSource(selectedItem.sourcePath)}
                     title={selectedItem.title}
                   />
                 </div>
