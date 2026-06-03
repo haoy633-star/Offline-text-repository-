@@ -259,6 +259,10 @@ input[type="range"] {
   font-weight: 720;
 }
 
+.settings-title.sub-title {
+  margin-top: 14px;
+}
+
 .check-row {
   display: flex;
   align-items: center;
@@ -1215,15 +1219,41 @@ input[type="range"] {
   white-space: pre-wrap;
 }
 
+.document-frame {
+  width: min(100%, 1100px);
+  height: calc(100vh - 150px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: #050607;
+}
+
+.document-fallback {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  color: #c8d2dd;
+  text-align: center;
+}
+
+.document-fallback p {
+  margin: 0;
+}
+
 .help-view {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
   height: 100vh;
+  min-height: 0;
+  overflow: hidden;
   background: #111214;
 }
 
 .help-content {
   justify-items: start;
   place-items: start;
+  align-content: start;
+  overflow-y: auto;
 }
 
 .help-content p {

@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { copyFile, cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { cpus } from "node:os";
 import { basename, dirname, extname, join, parse, relative, resolve } from "node:path";
 import { Readable } from "node:stream";
 import JSZip from "jszip";
@@ -12,12 +13,14 @@ import type {
   AppLanguage,
   AppSettings,
   AutoOrganizeResult,
+  DocumentKind,
   ImportResult,
   ImportProgress,
   LibraryCategory,
   LibraryFile,
   LibraryItem,
   LibrarySnapshot,
+  OpenResult,
   OrganizeResult
 } from "../shared/types";
 
@@ -37,6 +40,8 @@ const categoryFolders: Record<LibraryCategory, string> = {
   archive: "Archives",
   other: "Other"
 };
+
+sharp.concurrency(Math.max(2, Math.min(8, cpus().length - 1)));
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -102,6 +107,14 @@ function categoryForExtension(filePath: string): LibraryCategory {
   if (videoExtensions.has(extension)) return "video";
   if (archiveExtensions.has(extension)) return "archive";
   return "other";
+}
+
+function documentKindForFile(filePath: string): DocumentKind {
+  const extension = extname(filePath).toLowerCase();
+  if ([".txt", ".md", ".markdown"].includes(extension)) return "plain";
+  if (extension === ".pdf") return "pdf";
+  if ([".doc", ".docx"].includes(extension)) return "word";
+  return "ebook";
 }
 
 function mimeTypeForFile(filePath: string): string {
@@ -213,6 +226,38 @@ async function createTextPreview(filePath: string): Promise<string | null> {
   }
 }
 
+function decodeXmlText(value: string): string {
+  return value
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, "\"")
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+async function readDocumentText(filePath: string): Promise<string> {
+  const extension = extname(filePath).toLowerCase();
+  if ([".txt", ".md", ".markdown"].includes(extension)) {
+    return readFile(filePath, "utf8");
+  }
+
+  if (extension === ".docx") {
+    const zip = await JSZip.loadAsync(await readFile(filePath));
+    const documentXml = await zip.file("word/document.xml")?.async("string");
+    if (!documentXml) return "";
+    return decodeXmlText(
+      documentXml
+        .replace(/<w:tab\/>/g, "\t")
+        .replace(/<\/w:p>/g, "\n")
+        .replace(/<[^>]+>/g, "")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim()
+    );
+  }
+
+  return "";
+}
+
 async function cacheCoverIfEnabled(itemId: string, coverPath: string | null): Promise<string | null> {
   if (!coverPath || !existsSync(coverPath)) {
     return coverPath;
@@ -299,6 +344,7 @@ async function readSettings(): Promise<AppSettings> {
     const data = JSON.parse(raw) as AppSettings;
     return {
       players: data.players ?? {},
+      documentPlayers: data.documentPlayers ?? {},
       detectedPlayers: await detectPlayers(),
       language: data.language ?? "zh",
       coverCacheEnabled: data.coverCacheEnabled ?? false,
@@ -310,6 +356,7 @@ async function readSettings(): Promise<AppSettings> {
   } catch {
     return {
       players: {},
+      documentPlayers: {},
       detectedPlayers: await detectPlayers(),
       language: "zh",
       coverCacheEnabled: false,
@@ -755,10 +802,11 @@ async function syncArchiveDirectory(): Promise<LibraryItem[]> {
   return items;
 }
 
-async function openWithPlayer(item: LibraryItem): Promise<void> {
+async function openWithPlayer(item: LibraryItem): Promise<boolean> {
   const settings = await readSettings();
   const targetPath = item.sourceType === "archive" && item.category === "comic" ? item.sourcePath : item.sourcePath;
-  const customPlayer = settings.players[item.category] ?? settings.detectedPlayers[item.category];
+  const documentPlayer = item.category === "text" ? settings.documentPlayers[documentKindForFile(targetPath)] : undefined;
+  const customPlayer = documentPlayer ?? settings.players[item.category] ?? settings.detectedPlayers[item.category];
 
   item.lastOpenedAt = now();
   const items = await readLibrary();
@@ -770,10 +818,11 @@ async function openWithPlayer(item: LibraryItem): Promise<void> {
       stdio: "ignore"
     });
     child.unref();
-    return;
+    return true;
   }
 
-  await shell.openPath(targetPath);
+  const error = await shell.openPath(targetPath);
+  return !error;
 }
 
 function sanitizeName(value: string): string {
@@ -1402,10 +1451,11 @@ app.whenReady().then(() => {
   ipcMain.handle("library:open-external", async (_, itemId: string) => {
     const items = await readLibrary();
     const item = items.find((entry) => entry.id === itemId);
+    let opened = false;
     if (item) {
-      await openWithPlayer(item);
+      opened = await openWithPlayer(item);
     }
-    return snapshot(await readLibrary());
+    return { ...(await snapshot(await readLibrary())), opened } satisfies OpenResult;
   });
 
   ipcMain.handle("library:clear", async () => {
@@ -1470,6 +1520,27 @@ app.whenReady().then(() => {
   ipcMain.handle("settings:clear-player", async (_, category: LibraryCategory) => {
     const settings = await readSettings();
     delete settings.players[category];
+    await writeSettings(settings);
+    return settings;
+  });
+
+  ipcMain.handle("settings:set-document-player", async (_, kind: DocumentKind) => {
+    const selection = await dialog.showOpenDialog(mainWindow!, {
+      title: `Choose ${kind} document player`,
+      filters: [{ name: "Programs", extensions: ["exe", "bat", "cmd"] }],
+      properties: ["openFile"]
+    });
+    const settings = await readSettings();
+    if (!selection.canceled && selection.filePaths[0]) {
+      settings.documentPlayers[kind] = selection.filePaths[0];
+      await writeSettings(settings);
+    }
+    return settings;
+  });
+
+  ipcMain.handle("settings:clear-document-player", async (_, kind: DocumentKind) => {
+    const settings = await readSettings();
+    delete settings.documentPlayers[kind];
     await writeSettings(settings);
     return settings;
   });
@@ -1556,6 +1627,10 @@ app.whenReady().then(() => {
 
   ipcMain.handle("file:read-text", async (_, filePath: string) => {
     return readFile(filePath, "utf8");
+  });
+
+  ipcMain.handle("file:read-document-text", async (_, filePath: string) => {
+    return readDocumentText(filePath);
   });
 
   ipcMain.handle("app:open-github", async () => {

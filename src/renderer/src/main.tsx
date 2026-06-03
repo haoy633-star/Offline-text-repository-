@@ -37,6 +37,7 @@ import {
 import type {
   AppLanguage,
   AppSettings,
+  DocumentKind,
   ImportProgress,
   LibraryCategory,
   LibraryItem,
@@ -52,6 +53,7 @@ type FitMode = "page" | "width" | "actual";
 type DisplayMode = "paged" | "scroll";
 
 const categoryKeys: LibraryCategory[] = ["comic", "image", "text", "audio", "video", "series", "archive", "other"];
+const documentKinds: DocumentKind[] = ["plain", "pdf", "word", "ebook"];
 const gridColumnOptions = [4, 5, 6] as const;
 const archiveCategoryFolders: Record<LibraryCategory, string> = {
   comic: "Comics",
@@ -80,6 +82,13 @@ const copy = {
     noContent: "还没有可显示的内容",
     noContentHint: "导入一个混合文件夹，应用会自动识别漫画、文本、音频、视频和其它文件。",
     externalPlayers: "外部播放器",
+    documentPlayers: "文档打开方式",
+    documentPlain: "TXT / Markdown",
+    documentPdf: "PDF",
+    documentWord: "Word",
+    documentEbook: "电子书",
+    internalDocumentFallback: "系统默认程序无法打开时，会使用内置文档查看器。",
+    unsupportedDocument: "这个文档格式只能使用系统默认程序或外部程序打开。",
     windowsDefault: "内置/系统默认",
     choosePlayer: "选择播放器",
     clearDefault: "恢复默认",
@@ -222,6 +231,13 @@ const copy = {
     noContent: "No content yet",
     noContentHint: "Import a mixed folder and the app will detect comics, text, audio, video, and other files.",
     externalPlayers: "External Players",
+    documentPlayers: "Document Openers",
+    documentPlain: "TXT / Markdown",
+    documentPdf: "PDF",
+    documentWord: "Word",
+    documentEbook: "Ebook",
+    internalDocumentFallback: "If the system default app cannot open it, the built-in document viewer is used.",
+    unsupportedDocument: "This document format needs the system default app or an external program.",
     windowsDefault: "Built-in / system default",
     choosePlayer: "Choose player",
     clearDefault: "Clear player",
@@ -368,6 +384,13 @@ const localizedCopy = {
     noContent: "まだ内容がありません",
     noContentHint: "混在フォルダーを取り込むと、漫画、画像、テキスト、音声、動画などを自動判定します。",
     externalPlayers: "外部プレイヤー",
+    documentPlayers: "文書を開くアプリ",
+    documentPlain: "TXT / Markdown",
+    documentPdf: "PDF",
+    documentWord: "Word",
+    documentEbook: "電子書籍",
+    internalDocumentFallback: "システム既定アプリで開けない場合は内蔵文書ビューアーを使います。",
+    unsupportedDocument: "この文書形式はシステム既定アプリまたは外部アプリが必要です。",
     windowsDefault: "内蔵 / システム既定",
     choosePlayer: "プレイヤーを選択",
     clearDefault: "既定に戻す",
@@ -540,6 +563,7 @@ function defaultSnapshot(): LibrarySnapshot {
     },
     settings: {
       players: {},
+      documentPlayers: {},
       detectedPlayers: {},
       language: "zh",
       coverCacheEnabled: false,
@@ -568,6 +592,20 @@ function CategoryIcon({ category, size = 28 }: { category: LibraryCategory; size
 
 function fileName(filePath: string): string {
   return filePath.split(/[\\/]/).pop() ?? filePath;
+}
+
+function extensionOf(filePath: string): string {
+  const name = fileName(filePath).toLowerCase();
+  const index = name.lastIndexOf(".");
+  return index >= 0 ? name.slice(index) : "";
+}
+
+function documentKindForPath(filePath: string): DocumentKind {
+  const extension = extensionOf(filePath);
+  if ([".txt", ".md", ".markdown"].includes(extension)) return "plain";
+  if (extension === ".pdf") return "pdf";
+  if ([".doc", ".docx"].includes(extension)) return "word";
+  return "ebook";
 }
 
 function isInsidePath(parentPath: string, childPath: string): boolean {
@@ -930,7 +968,12 @@ function App(): JSX.Element {
 
   useEffect(() => {
     if (!selectedItem || viewMode !== "viewer" || selectedItem.category !== "text") return;
-    void window.comicShelf.readTextFile(selectedItem.sourcePath).then(setTextContent).catch(() => setTextContent(""));
+    const kind = documentKindForPath(selectedItem.sourcePath);
+    if (kind === "pdf") {
+      setTextContent("");
+      return;
+    }
+    void window.comicShelf.readDocumentText(selectedItem.sourcePath).then(setTextContent).catch(() => setTextContent(""));
   }, [selectedItem, viewMode]);
 
   useEffect(() => {
@@ -984,6 +1027,14 @@ function App(): JSX.Element {
     if ((item.category === "comic" || item.category === "image") && item.pageCount > 0) {
       setViewMode("reader");
       await markProgress(item, item.currentPage);
+      return;
+    }
+
+    if (item.category === "text") {
+      const data = await window.comicShelf.openExternal(item.id);
+      setSnapshot(data);
+      if (data.opened) return;
+      setViewMode("viewer");
       return;
     }
 
@@ -1071,6 +1122,16 @@ function App(): JSX.Element {
     setSnapshot((current) => ({ ...current, settings }));
   }
 
+  async function setDocumentPlayer(kind: DocumentKind): Promise<void> {
+    const settings = await window.comicShelf.setDocumentPlayer(kind);
+    setSnapshot((current) => ({ ...current, settings }));
+  }
+
+  async function clearDocumentPlayer(kind: DocumentKind): Promise<void> {
+    const settings = await window.comicShelf.clearDocumentPlayer(kind);
+    setSnapshot((current) => ({ ...current, settings }));
+  }
+
   async function setLanguage(language: AppLanguage): Promise<void> {
     const settings = await window.comicShelf.setLanguage(language);
     setSnapshot((current) => ({ ...current, settings }));
@@ -1082,8 +1143,8 @@ function App(): JSX.Element {
     await setLanguage(languages[(currentIndex + 1) % languages.length]);
   }
 
-  function toggleEditorMode(): void {
-    setEditorMode((enabled) => !enabled);
+  function setEditorEnabled(enabled: boolean): void {
+    setEditorMode(enabled);
     setSelectedIds([]);
   }
 
@@ -1314,6 +1375,19 @@ function App(): JSX.Element {
     return t.windowsDefault;
   }
 
+  function documentKindLabel(kind: DocumentKind): string {
+    if (kind === "plain") return t.documentPlain;
+    if (kind === "pdf") return t.documentPdf;
+    if (kind === "word") return t.documentWord;
+    return t.documentEbook;
+  }
+
+  function documentPlayerText(settings: AppSettings, kind: DocumentKind): string {
+    const manual = settings.documentPlayers[kind];
+    if (manual) return fileName(manual);
+    return t.windowsDefault;
+  }
+
   function closeReader(): void {
     setPureReading(false);
     setFullscreen(false);
@@ -1415,6 +1489,23 @@ function App(): JSX.Element {
                   </button>
                 </div>
               ))}
+            <div className="settings-title sub-title">
+              <FileText size={16} />
+              <span>{t.documentPlayers}</span>
+            </div>
+            {documentKinds.map((kind) => (
+              <div className="player-row" key={kind}>
+                <span>{documentKindLabel(kind)}</span>
+                <small title={snapshot.settings.documentPlayers[kind] ?? t.windowsDefault}>{documentPlayerText(snapshot.settings, kind)}</small>
+                <button title={t.choosePlayer} onClick={() => void setDocumentPlayer(kind)}>
+                  <FolderOpen size={15} />
+                </button>
+                <button title={t.clearDefault} onClick={() => void clearDocumentPlayer(kind)}>
+                  <X size={15} />
+                </button>
+              </div>
+            ))}
+            <p className="cache-hint">{t.internalDocumentFallback}</p>
           </section>
 
           <section className="organize-panel">
@@ -1514,7 +1605,7 @@ function App(): JSX.Element {
             <div className="topbar-controls">
               <label>
                 <span>{t.editorMode}</span>
-                <select value={editorMode ? "on" : "off"} onChange={(event) => (event.target.value === "on" ? setEditorMode(true) : toggleEditorMode())}>
+                <select value={editorMode ? "on" : "off"} onChange={(event) => setEditorEnabled(event.target.value === "on")}>
                   <option value="off">{t.editorOff}</option>
                   <option value="on">{t.editorOn}</option>
                 </select>
@@ -1748,7 +1839,21 @@ function App(): JSX.Element {
               </div>
             )}
             {selectedItem.category === "audio" && <audio src={window.comicShelf.assetUrl(selectedItem.sourcePath)} controls />}
-            {selectedItem.category === "text" && <pre>{textContent}</pre>}
+            {selectedItem.category === "text" &&
+              (documentKindForPath(selectedItem.sourcePath) === "pdf" ? (
+                <iframe className="document-frame" src={window.comicShelf.assetUrl(selectedItem.sourcePath)} title={selectedItem.title} />
+              ) : textContent ? (
+                <pre>{textContent}</pre>
+              ) : (
+                <div className="document-fallback">
+                  <FileText size={42} />
+                  <p>{t.unsupportedDocument}</p>
+                  <button onClick={() => void openExternal(selectedItem)}>
+                    <Maximize2 size={18} />
+                    <span>{t.externalOpen}</span>
+                  </button>
+                </div>
+              ))}
             {!["video", "series", "audio", "text"].includes(selectedItem.category) && (
               <button onClick={() => void openExternal(selectedItem)}>
                 <Maximize2 size={18} />

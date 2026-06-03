@@ -2,6 +2,7 @@ export type LibrarySourceType = "folder" | "archive" | "file";
 export type LibraryCategory = "comic" | "image" | "text" | "audio" | "video" | "series" | "archive" | "other";
 export type AppLanguage = "zh" | "en" | "ja";
 export type LibrarySortKey = "az" | "za" | "newest" | "oldest" | "recent";
+export type DocumentKind = "plain" | "pdf" | "word" | "ebook";
 
 export interface LibraryFile {
   path: string;
@@ -38,9 +39,11 @@ export interface LibraryStats {
 }
 
 export type PlayerSettings = Partial<Record<LibraryCategory, string>>;
+export type DocumentPlayerSettings = Partial<Record<DocumentKind, string>>;
 
 export interface AppSettings {
   players: PlayerSettings;
+  documentPlayers: DocumentPlayerSettings;
   detectedPlayers: PlayerSettings;
   language: AppLanguage;
   coverCacheEnabled: boolean;
@@ -86,4 +89,8 @@ export interface LibrarySnapshot {
   items: LibraryItem[];
   stats: LibraryStats;
   settings: AppSettings;
+}
+
+export interface OpenResult extends LibrarySnapshot {
+  opened: boolean;
 }

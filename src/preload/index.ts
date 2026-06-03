@@ -3,11 +3,13 @@ import type {
   AppLanguage,
   AppSettings,
   AutoOrganizeResult,
+  DocumentKind,
   ImportResult,
   ImportProgress,
   LibraryCategory,
   LibraryItem,
   LibrarySnapshot,
+  OpenResult,
   OrganizeResult
 } from "../shared/types";
 
@@ -28,7 +30,7 @@ const api = {
   deleteItems: (itemIds: string[]): Promise<LibrarySnapshot> => ipcRenderer.invoke("library:delete-items", itemIds),
   createComicFromImages: (itemIds: string[], title: string): Promise<LibrarySnapshot> =>
     ipcRenderer.invoke("library:create-comic-from-images", itemIds, title),
-  openExternal: (itemId: string): Promise<LibrarySnapshot> => ipcRenderer.invoke("library:open-external", itemId),
+  openExternal: (itemId: string): Promise<OpenResult> => ipcRenderer.invoke("library:open-external", itemId),
   clearLibrary: (): Promise<LibrarySnapshot> => ipcRenderer.invoke("library:clear"),
   organizeComics: (compressFolders: boolean): Promise<OrganizeResult> =>
     ipcRenderer.invoke("library:organize-comics", compressFolders),
@@ -40,6 +42,8 @@ const api = {
   openReferenceImage: (filePath: string, title: string): Promise<void> => ipcRenderer.invoke("app:open-reference-image", filePath, title),
   setPlayer: (category: LibraryCategory): Promise<AppSettings> => ipcRenderer.invoke("settings:set-player", category),
   clearPlayer: (category: LibraryCategory): Promise<AppSettings> => ipcRenderer.invoke("settings:clear-player", category),
+  setDocumentPlayer: (kind: DocumentKind): Promise<AppSettings> => ipcRenderer.invoke("settings:set-document-player", kind),
+  clearDocumentPlayer: (kind: DocumentKind): Promise<AppSettings> => ipcRenderer.invoke("settings:clear-document-player", kind),
   setLanguage: (language: AppLanguage): Promise<AppSettings> => ipcRenderer.invoke("settings:set-language", language),
   setCoverCache: (enabled: boolean): Promise<LibrarySnapshot> => ipcRenderer.invoke("settings:set-cover-cache", enabled),
   setCoverCacheDirectory: (): Promise<LibrarySnapshot> => ipcRenderer.invoke("settings:set-cover-cache-directory"),
@@ -49,6 +53,7 @@ const api = {
   setHighPerformance: (enabled: boolean): Promise<LibrarySnapshot> => ipcRenderer.invoke("settings:set-high-performance", enabled),
   revealInExplorer: (filePath: string): Promise<void> => ipcRenderer.invoke("file:reveal", filePath),
   readTextFile: (filePath: string): Promise<string> => ipcRenderer.invoke("file:read-text", filePath),
+  readDocumentText: (filePath: string): Promise<string> => ipcRenderer.invoke("file:read-document-text", filePath),
   openGithub: (): Promise<void> => ipcRenderer.invoke("app:open-github"),
   assetUrl: (filePath: string): string => `manga://file/?path=${encodeURIComponent(filePath)}`
 };
