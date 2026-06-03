@@ -1169,6 +1169,40 @@ function App(): JSX.Element {
         return;
       }
 
+      if (selectedItem && viewMode === "viewer") {
+        const isPdf = selectedItem.category === "text" && documentKindForPath(selectedItem.sourcePath) === "pdf";
+        if (isPdf) {
+          if (event.key === "ArrowRight" || event.key === "ArrowDown" || event.key === "PageDown" || event.key === " ") {
+            event.preventDefault();
+            changePdfPage(1);
+          }
+          if (event.key === "ArrowLeft" || event.key === "ArrowUp" || event.key === "PageUp") {
+            event.preventDefault();
+            changePdfPage(-1);
+          }
+          if (event.key === "+") {
+            setPdfFitWidth(false);
+            setPdfZoom((value) => Math.min(300, value + 10));
+          }
+          if (event.key === "-") {
+            setPdfFitWidth(false);
+            setPdfZoom((value) => Math.max(25, value - 10));
+          }
+          if (event.key.toLowerCase() === "f") {
+            pureReading ? void exitPureReading() : void enterFullscreenReading();
+          }
+          if (event.key === "Escape") {
+            pureReading ? void exitPureReading() : setViewMode("grid");
+          }
+          return;
+        }
+
+        if (event.key === "Escape") {
+          pureReading ? void exitPureReading() : setViewMode("grid");
+        }
+        return;
+      }
+
       if (!selectedItem || viewMode !== "reader") return;
       if (event.key === "ArrowRight" || event.key === " ") {
         event.preventDefault();
@@ -1189,7 +1223,7 @@ function App(): JSX.Element {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [displayMode, pageCount, pureReading, selectedItem, viewMode]);
+  }, [displayMode, pageCount, pdfPage, pdfPageCount, pureReading, selectedItem, viewMode]);
 
   useEffect(() => {
     if (!selectedItem || viewMode !== "viewer" || selectedItem.category !== "text") return;
@@ -2325,9 +2359,6 @@ function App(): JSX.Element {
                   </>
                 )}
                 <button className="viewer-icon-button" title={t.fullscreen} onClick={() => void enterFullscreenReading()}>
-                  <Maximize2 size={18} />
-                </button>
-                <button className="viewer-icon-button" title={t.externalOpen} onClick={() => void openExternal(selectedItem)}>
                   <Maximize2 size={18} />
                 </button>
               </div>
