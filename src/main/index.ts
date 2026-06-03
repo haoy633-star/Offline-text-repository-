@@ -345,6 +345,8 @@ async function readSettings(): Promise<AppSettings> {
     return {
       players: data.players ?? {},
       documentPlayers: data.documentPlayers ?? {},
+      internalPlayerCategories: data.internalPlayerCategories ?? [],
+      internalDocumentKinds: data.internalDocumentKinds ?? [],
       detectedPlayers: await detectPlayers(),
       language: data.language ?? "zh",
       coverCacheEnabled: data.coverCacheEnabled ?? false,
@@ -357,6 +359,8 @@ async function readSettings(): Promise<AppSettings> {
     return {
       players: {},
       documentPlayers: {},
+      internalPlayerCategories: [],
+      internalDocumentKinds: [],
       detectedPlayers: await detectPlayers(),
       language: "zh",
       coverCacheEnabled: false,
@@ -805,6 +809,12 @@ async function syncArchiveDirectory(): Promise<LibraryItem[]> {
 async function openWithPlayer(item: LibraryItem): Promise<boolean> {
   const settings = await readSettings();
   const targetPath = item.sourceType === "archive" && item.category === "comic" ? item.sourcePath : item.sourcePath;
+  if (settings.internalPlayerCategories.includes(item.category)) {
+    return false;
+  }
+  if (item.category === "text" && settings.internalDocumentKinds.includes(documentKindForFile(targetPath))) {
+    return false;
+  }
   const documentPlayer = item.category === "text" ? settings.documentPlayers[documentKindForFile(targetPath)] : undefined;
   const customPlayer = documentPlayer ?? settings.players[item.category] ?? settings.detectedPlayers[item.category];
 
@@ -1512,6 +1522,7 @@ app.whenReady().then(() => {
     const settings = await readSettings();
     if (!selection.canceled && selection.filePaths[0]) {
       settings.players[category] = selection.filePaths[0];
+      settings.internalPlayerCategories = settings.internalPlayerCategories.filter((entry) => entry !== category);
       await writeSettings(settings);
     }
     return settings;
@@ -1520,6 +1531,15 @@ app.whenReady().then(() => {
   ipcMain.handle("settings:clear-player", async (_, category: LibraryCategory) => {
     const settings = await readSettings();
     delete settings.players[category];
+    settings.internalPlayerCategories = settings.internalPlayerCategories.filter((entry) => entry !== category);
+    await writeSettings(settings);
+    return settings;
+  });
+
+  ipcMain.handle("settings:use-internal-player", async (_, category: LibraryCategory) => {
+    const settings = await readSettings();
+    delete settings.players[category];
+    settings.internalPlayerCategories = [...new Set([...settings.internalPlayerCategories, category])];
     await writeSettings(settings);
     return settings;
   });
@@ -1533,6 +1553,7 @@ app.whenReady().then(() => {
     const settings = await readSettings();
     if (!selection.canceled && selection.filePaths[0]) {
       settings.documentPlayers[kind] = selection.filePaths[0];
+      settings.internalDocumentKinds = settings.internalDocumentKinds.filter((entry) => entry !== kind);
       await writeSettings(settings);
     }
     return settings;
@@ -1541,6 +1562,15 @@ app.whenReady().then(() => {
   ipcMain.handle("settings:clear-document-player", async (_, kind: DocumentKind) => {
     const settings = await readSettings();
     delete settings.documentPlayers[kind];
+    settings.internalDocumentKinds = settings.internalDocumentKinds.filter((entry) => entry !== kind);
+    await writeSettings(settings);
+    return settings;
+  });
+
+  ipcMain.handle("settings:use-internal-document-player", async (_, kind: DocumentKind) => {
+    const settings = await readSettings();
+    delete settings.documentPlayers[kind];
+    settings.internalDocumentKinds = [...new Set([...settings.internalDocumentKinds, kind])];
     await writeSettings(settings);
     return settings;
   });

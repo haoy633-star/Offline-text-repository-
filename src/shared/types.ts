@@ -44,6 +44,8 @@ export type DocumentPlayerSettings = Partial<Record<DocumentKind, string>>;
 export interface AppSettings {
   players: PlayerSettings;
   documentPlayers: DocumentPlayerSettings;
+  internalPlayerCategories: LibraryCategory[];
+  internalDocumentKinds: DocumentKind[];
   detectedPlayers: PlayerSettings;
   language: AppLanguage;
   coverCacheEnabled: boolean;

@@ -51,6 +51,9 @@ type ViewMode = "grid" | "reader" | "viewer" | "help";
 type FilterKey = "all" | "favorite" | LibraryCategory;
 type FitMode = "page" | "width" | "actual";
 type DisplayMode = "paged" | "scroll";
+type EditorDialog =
+  | { kind: "rename"; item: LibraryItem; value: string }
+  | { kind: "collection"; itemIds: string[]; value: string };
 
 const categoryKeys: LibraryCategory[] = ["comic", "image", "text", "audio", "video", "series", "archive", "other"];
 const documentKinds: DocumentKind[] = ["plain", "pdf", "word", "ebook"];
@@ -332,10 +335,10 @@ const copy = {
     selectAll: "Select current page",
     clearSelection: "Clear selection",
     renameSelected: "Rename",
-    createComicFromImages: "Create comic from images",
+    createComicFromImages: "Create image collection",
     deleteSelectedFiles: "Delete selected files",
     renamePrompt: "Enter a new name. This also renames the external file or folder.",
-    newComicPrompt: "Enter the new comic folder name. Selected images will be moved into that folder.",
+    newComicPrompt: "Enter the new image collection folder name. Selected images will be moved into that folder.",
     deleteFilesConfirm: "Delete the selected external files/folders from disk? This is not just removing them from the library.",
     editorOnlyImages: "Select at least one image item in the Images category first.",
     editorDone: "Edit complete. External files were updated too.",
@@ -355,7 +358,7 @@ const copy = {
     helpText:
       "Import Folder: choose a comic folder or mixed media folder. Folders with multiple images are treated as comics; loose images go to Images; text, audio, video, and archives are classified automatically. Import CBZ / ZIP: imports comic archives and extracts them to app cache for reading. Search: matches title, original path, and tags. Sort: choose A-Z, Z-A, newest import, oldest import, or recently opened. Favorites: click the heart to keep an item in Favorites. Tags: click the tag button on a card and enter comma-separated tags such as Read, Favorite, Author. Then use the Tag dropdown to filter. Per row: choose 4, 5, or 6 cards per row. Mode switches between page-style and scroll-style browsing; for huge libraries, use page mode and fewer cards. Video and Series: shelf cards show lightweight video previews; Series previews the first episode and opens with a built-in episode selector. Reader: Arrow keys or Space turn pages; first/last buttons jump quickly; zoom and fit modes handle different image ratios. Fullscreen reading hides the sidebar, toolbar, and native menu. External players: common players such as VLC, PotPlayer, Windows Media Player, and SumatraPDF are detected automatically, and manual selection is still available. Clear Library: resets only the app index and cache, not original files. Organize Imported Resources: moves original imported files into a new destination folder and category subfolders. Compression mode converts folder comics to CBZ. Archive and Classify Imported Resources is a large operation that moves all imported resources into Comics, Images, Text, Audio, Video, Archives, and Other, so confirm the destination carefully.",
     categories: {
-      comic: "Comics",
+      comic: "Image Collections",
       image: "Images",
       text: "Text",
       audio: "Audio",
@@ -369,6 +372,16 @@ const copy = {
 
 const localizedCopy = {
   ...copy,
+  zh: {
+    ...copy.zh,
+    compressComicFolders: "文件夹图片集压缩为 CBZ",
+    createComicFromImages: "选中图片新建图片集",
+    newComicPrompt: "输入新图片集文件夹名称。选中的图片会被移动到这个新文件夹里。",
+    categories: {
+      ...copy.zh.categories,
+      comic: "图片集"
+    }
+  },
   ja: {
     ...copy.en,
     subtitle: "オフライン漫画とメディアライブラリ",
@@ -518,6 +531,11 @@ const localizedCopy = {
   }
 };
 
+localizedCopy.ja.createComicFromImages = "画像集を作成";
+localizedCopy.ja.newComicPrompt = "新しい画像集フォルダー名を入力してください。選択した画像をそのフォルダーへ移動します。";
+localizedCopy.ja.categories.comic = "画像集";
+localizedCopy.ja.compressComicFolders = "フォルダー画像集を CBZ に圧縮";
+
 function helpParagraphs(language: AppLanguage): string[] {
   if (language === "en") {
     return [
@@ -564,6 +582,8 @@ function defaultSnapshot(): LibrarySnapshot {
     settings: {
       players: {},
       documentPlayers: {},
+      internalPlayerCategories: [],
+      internalDocumentKinds: [],
       detectedPlayers: {},
       language: "zh",
       coverCacheEnabled: false,
@@ -606,6 +626,16 @@ function documentKindForPath(filePath: string): DocumentKind {
   if (extension === ".pdf") return "pdf";
   if ([".doc", ".docx"].includes(extension)) return "word";
   return "ebook";
+}
+
+function documentTypeSuffix(filePath: string): string {
+  const extension = extensionOf(filePath);
+  if (extension === ".pdf") return "PDF";
+  if ([".doc", ".docx"].includes(extension)) return "Word";
+  if ([".txt"].includes(extension)) return "TXT";
+  if ([".md", ".markdown"].includes(extension)) return "Markdown";
+  if ([".epub", ".mobi", ".azw3"].includes(extension)) return extension.slice(1).toUpperCase();
+  return "Document";
 }
 
 function isInsidePath(parentPath: string, childPath: string): boolean {
@@ -799,6 +829,7 @@ function App(): JSX.Element {
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
   const [tagEditorItem, setTagEditorItem] = useState<LibraryItem | null>(null);
   const [tagDraft, setTagDraft] = useState("");
+  const [editorDialog, setEditorDialog] = useState<EditorDialog | null>(null);
   const [gridColumns, setGridColumns] = useState<number>(() => {
     const saved = Number(window.localStorage.getItem("offline-library-grid-columns"));
     return gridColumnOptions.includes(saved as (typeof gridColumnOptions)[number]) ? saved : 5;
@@ -1031,6 +1062,10 @@ function App(): JSX.Element {
     }
 
     if (item.category === "text") {
+      if (snapshot.settings.internalDocumentKinds.includes(documentKindForPath(item.sourcePath))) {
+        setViewMode("viewer");
+        return;
+      }
       const data = await window.comicShelf.openExternal(item.id);
       setSnapshot(data);
       if (data.opened) return;
@@ -1039,7 +1074,8 @@ function App(): JSX.Element {
     }
 
     const hasExternal = Boolean(snapshot.settings.players[item.category] ?? snapshot.settings.detectedPlayers[item.category]);
-    if (hasExternal && item.category !== "archive" && item.category !== "other") {
+    const forceInternal = snapshot.settings.internalPlayerCategories.includes(item.category);
+    if (!forceInternal && hasExternal && item.category !== "archive" && item.category !== "other") {
       const data = await window.comicShelf.openExternal(item.id);
       setSnapshot(data);
       return;
@@ -1122,6 +1158,11 @@ function App(): JSX.Element {
     setSnapshot((current) => ({ ...current, settings }));
   }
 
+  async function useInternalPlayer(category: LibraryCategory): Promise<void> {
+    const settings = await window.comicShelf.useInternalPlayer(category);
+    setSnapshot((current) => ({ ...current, settings }));
+  }
+
   async function setDocumentPlayer(kind: DocumentKind): Promise<void> {
     const settings = await window.comicShelf.setDocumentPlayer(kind);
     setSnapshot((current) => ({ ...current, settings }));
@@ -1129,6 +1170,11 @@ function App(): JSX.Element {
 
   async function clearDocumentPlayer(kind: DocumentKind): Promise<void> {
     const settings = await window.comicShelf.clearDocumentPlayer(kind);
+    setSnapshot((current) => ({ ...current, settings }));
+  }
+
+  async function useInternalDocumentPlayer(kind: DocumentKind): Promise<void> {
+    const settings = await window.comicShelf.useInternalDocumentPlayer(kind);
     setSnapshot((current) => ({ ...current, settings }));
   }
 
@@ -1159,12 +1205,7 @@ function App(): JSX.Element {
   async function renameSelectedItem(): Promise<void> {
     const item = selectedEditorItems[0];
     if (!item) return;
-    const value = window.prompt(t.renamePrompt, item.title);
-    if (!value?.trim()) return;
-    const next = await window.comicShelf.renameItem(item.id, value.trim());
-    setSnapshot(next);
-    setSelectedIds([]);
-    setNotice(t.editorDone);
+    setEditorDialog({ kind: "rename", item, value: item.title });
   }
 
   async function createComicFromSelectedImages(): Promise<void> {
@@ -1173,17 +1214,21 @@ function App(): JSX.Element {
       window.alert(t.editorOnlyImages);
       return;
     }
-    const value = window.prompt(t.newComicPrompt, "New Comic");
-    if (!value?.trim()) return;
+    setEditorDialog({ kind: "collection", itemIds: images.map((item) => item.id), value: "New Image Collection" });
+  }
+
+  async function confirmEditorDialog(): Promise<void> {
+    if (!editorDialog || !editorDialog.value.trim()) return;
     setBusy(true);
     try {
-      const next = await window.comicShelf.createComicFromImages(
-        images.map((item) => item.id),
-        value.trim()
-      );
+      const next =
+        editorDialog.kind === "rename"
+          ? await window.comicShelf.renameItem(editorDialog.item.id, editorDialog.value.trim())
+          : await window.comicShelf.createComicFromImages(editorDialog.itemIds, editorDialog.value.trim());
       setSnapshot(next);
       setSelectedIds([]);
-      setFilter("comic");
+      if (editorDialog.kind === "collection") setFilter("comic");
+      setEditorDialog(null);
       setNotice(t.editorDone);
     } finally {
       setBusy(false);
@@ -1368,6 +1413,7 @@ function App(): JSX.Element {
   }
 
   function playerText(settings: AppSettings, category: LibraryCategory): string {
+    if (settings.internalPlayerCategories.includes(category)) return t.internalViewer;
     const manual = settings.players[category];
     const detected = settings.detectedPlayers[category];
     if (manual) return fileName(manual);
@@ -1383,9 +1429,15 @@ function App(): JSX.Element {
   }
 
   function documentPlayerText(settings: AppSettings, kind: DocumentKind): string {
+    if (settings.internalDocumentKinds.includes(kind)) return t.internalViewer;
     const manual = settings.documentPlayers[kind];
     if (manual) return fileName(manual);
     return t.windowsDefault;
+  }
+
+  function itemCategoryLabel(item: LibraryItem): string {
+    if (item.category === "text") return `${t.categories.text} - ${documentTypeSuffix(item.sourcePath)}`;
+    return t.categories[item.category];
   }
 
   function closeReader(): void {
@@ -1484,6 +1536,9 @@ function App(): JSX.Element {
                   <button title={t.choosePlayer} onClick={() => void setPlayer(category)}>
                     <FolderOpen size={15} />
                   </button>
+                  <button title={t.internalViewer} onClick={() => void useInternalPlayer(category)}>
+                    <BookOpen size={15} />
+                  </button>
                   <button title={t.clearDefault} onClick={() => void clearPlayer(category)}>
                     <X size={15} />
                   </button>
@@ -1499,6 +1554,9 @@ function App(): JSX.Element {
                 <small title={snapshot.settings.documentPlayers[kind] ?? t.windowsDefault}>{documentPlayerText(snapshot.settings, kind)}</small>
                 <button title={t.choosePlayer} onClick={() => void setDocumentPlayer(kind)}>
                   <FolderOpen size={15} />
+                </button>
+                <button title={t.internalViewer} onClick={() => void useInternalDocumentPlayer(kind)}>
+                  <BookOpen size={15} />
                 </button>
                 <button title={t.clearDefault} onClick={() => void clearDocumentPlayer(kind)}>
                   <X size={15} />
@@ -1736,7 +1794,7 @@ function App(): JSX.Element {
                   </button>
                   <div className="book-meta">
                     <div className="meta-line">
-                      <span>{t.categories[item.category]}</span>
+                      <span>{itemCategoryLabel(item)}</span>
                       <span>{item.category === "comic" || item.category === "image" ? pageLabel(item.currentPage, item.pageCount) : t.internalViewer}</span>
                     </div>
                     <h3 title={item.title}>{item.title}</h3>
@@ -1969,6 +2027,31 @@ function App(): JSX.Element {
             <div className="modal-actions">
               <button onClick={() => setTagEditorItem(null)}>{t.cancel}</button>
               <button className="primary" onClick={() => void saveTags()}>
+                {t.save}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editorDialog && (
+        <div className="modal-overlay" role="dialog" aria-modal="true">
+          <div className="tag-editor">
+            <h2>{editorDialog.kind === "rename" ? t.renameSelected : t.createComicFromImages}</h2>
+            <p>{editorDialog.kind === "rename" ? t.renamePrompt : t.newComicPrompt}</p>
+            <input
+              className="editor-input"
+              value={editorDialog.value}
+              onChange={(event) => setEditorDialog({ ...editorDialog, value: event.target.value })}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") void confirmEditorDialog();
+                if (event.key === "Escape") setEditorDialog(null);
+              }}
+              autoFocus
+            />
+            <div className="modal-actions">
+              <button onClick={() => setEditorDialog(null)}>{t.cancel}</button>
+              <button className="primary" onClick={() => void confirmEditorDialog()} disabled={!editorDialog.value.trim() || busy}>
                 {t.save}
               </button>
             </div>
