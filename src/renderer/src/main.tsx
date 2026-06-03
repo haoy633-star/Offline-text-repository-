@@ -1303,7 +1303,7 @@ function App(): JSX.Element {
 
   function pdfSource(filePath: string): string {
     const zoom = pdfFitWidth ? "page-width" : String(pdfZoom);
-    return `${window.comicShelf.assetUrl(filePath)}#toolbar=0&navpanes=0&page=${pdfPage}&zoom=${zoom}`;
+    return `${window.comicShelf.assetUrl(filePath)}#page=${pdfPage}&zoom=${zoom}&toolbar=0&navpanes=0`;
   }
 
   function printPdf(): void {
@@ -1687,6 +1687,7 @@ function App(): JSX.Element {
 
   const shellClass = `app-shell ${pureReading ? "pure-reading" : ""}`;
   const readerImageClass = `reader-image fit-${fitMode}`;
+  const isPdfViewer = selectedItem?.category === "text" && documentKindForPath(selectedItem.sourcePath) === "pdf";
   const documentTextStyle = {
     ["--doc-font-size" as string]: `${textTheme.fontSize}px`,
     ["--doc-line-height" as string]: String(textTheme.lineHeight),
@@ -2122,8 +2123,7 @@ function App(): JSX.Element {
                     <button title={t.prev} onClick={() => changePdfPage(-1)}>
                       <ChevronLeft size={18} />
                     </button>
-                    <label className="reader-page-jump pdf-page-jump" title={t.jumpPage}>
-                      <span>{t.page}</span>
+                    <label className="pdf-page-jump" title={t.jumpPage}>
                       <input
                         type="number"
                         min={1}
@@ -2134,6 +2134,7 @@ function App(): JSX.Element {
                           if (event.key === "Enter") jumpToPdfPage();
                         }}
                       />
+                      <span>{t.page}</span>
                     </label>
                     <button title={t.next} onClick={() => changePdfPage(1)}>
                       <ChevronRight size={18} />
@@ -2244,7 +2245,7 @@ function App(): JSX.Element {
               {t.exitPure}
             </button>
           )}
-          <div className="internal-viewer">
+          <div className={`internal-viewer ${isPdfViewer ? "pdf-internal-viewer" : ""}`}>
             {selectedItem.category === "video" && (
               <video
                 src={window.comicShelf.assetUrl(selectedItem.sourcePath)}
@@ -2289,6 +2290,7 @@ function App(): JSX.Element {
               (documentKindForPath(selectedItem.sourcePath) === "pdf" ? (
                 <div className="document-reader pdf-reader">
                   <iframe
+                    key={`${selectedItem.id}-${pdfPage}-${pdfZoom}-${pdfFitWidth ? "fit" : "zoom"}`}
                     ref={pdfFrameRef}
                     className="document-frame"
                     src={pdfSource(selectedItem.sourcePath)}

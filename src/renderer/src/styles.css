@@ -1099,11 +1099,27 @@ input[type="range"] {
 }
 
 .pdf-page-jump {
-  grid-template-columns: auto 54px;
+  display: grid;
+  grid-template-columns: 46px auto;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: #20242a;
+  color: #a8b0b8;
+  font-size: 11px;
 }
 
 .pdf-page-jump input {
-  width: 54px;
+  width: 46px;
+  height: 26px;
+  border: 0;
+  border-radius: 5px;
+  background: #111418;
+  color: #f6f2ea;
+  text-align: center;
 }
 
 .reader-actions select {
@@ -1349,6 +1365,15 @@ input[type="range"] {
   padding: 0;
 }
 
+.pdf-internal-viewer {
+  place-items: stretch;
+  align-content: stretch;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #101214;
+}
+
 .internal-viewer video {
   width: min(100%, 1100px);
   max-height: calc(100vh - 140px);
@@ -1419,11 +1444,12 @@ input[type="range"] {
 }
 
 .pdf-reader {
-  width: min(100%, 1220px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
   background: #101214;
-  box-shadow: 0 22px 80px rgba(0, 0, 0, 0.3);
+  box-shadow: none;
 }
 
 .document-frame {
