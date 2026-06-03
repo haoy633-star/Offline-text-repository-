@@ -67,6 +67,8 @@ After downloading, double-click the installer and follow the setup wizard.
 
 The installer uses a guided setup. It lets you choose the install location and whether to create shortcuts. New installer builds use the same app id and installer guid, so installing a newer version upgrades/replaces the older installed version instead of creating a separate app entry. If an older installation is detected, the installer shows an upgrade notice and closes the running old app before continuing.
 
+GitHub Release assets include the installer and `Offline-Library-1.0.0-Guide-中文-English-日本語.md`, which explains the app in Chinese, English, and Japanese.
+
 安装版使用向导模式。打开安装包后可以选择安装位置，也可以选择是否创建快捷方式。新版安装包使用固定应用标识和安装器标识，会升级/替换旧安装版，而不是创建一个重复软件。
 
 ### Option 1: Download Source Code / 下载源码

@@ -42,6 +42,7 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let activeImportStartedAt = 0;
 let isQuitting = false;
+const referenceWindows = new Set<BrowserWindow>();
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -1127,6 +1128,82 @@ function quitApp(): void {
   app.quit();
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function createReferenceWindow(filePath: string, title: string): void {
+  if (!existsSync(filePath)) return;
+
+  const safeTitle = escapeHtml(title || basename(filePath));
+  const sourceUrl = `manga://file/?path=${encodeURIComponent(filePath)}`;
+  const referenceWindow = new BrowserWindow({
+    width: 360,
+    height: 520,
+    minWidth: 180,
+    minHeight: 180,
+    title: `Reference - ${title || basename(filePath)}`,
+    backgroundColor: "#101214",
+    alwaysOnTop: true,
+    autoHideMenuBar: true,
+    resizable: true,
+    minimizable: true,
+    maximizable: false,
+    webPreferences: {
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+
+  referenceWindows.add(referenceWindow);
+  referenceWindow.on("closed", () => referenceWindows.delete(referenceWindow));
+  referenceWindow.setAlwaysOnTop(true, "floating");
+  void referenceWindow.loadURL(
+    `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>${safeTitle}</title>
+    <style>
+      * { box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #101214; color: #f6f2ea; font-family: "Segoe UI", sans-serif; }
+      body { display: grid; grid-template-rows: 38px 1fr 42px; }
+      header { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0 10px; background: #20242a; border-bottom: 1px solid rgba(255,255,255,0.1); }
+      header strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+      main { display: grid; place-items: center; min-height: 0; overflow: hidden; }
+      img { display: block; width: 100%; height: 100%; object-fit: contain; background: #050607; }
+      body.free img { object-fit: fill; }
+      footer { display: flex; align-items: center; gap: 8px; padding: 0 10px; background: #15171a; border-top: 1px solid rgba(255,255,255,0.08); }
+      button { min-height: 28px; padding: 0 10px; border: 0; border-radius: 7px; background: #2b3036; color: #f6f2ea; cursor: pointer; }
+      button:hover { background: #3a424b; }
+      span { color: #a8b0b8; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <header><strong title="${safeTitle}">${safeTitle}</strong></header>
+    <main><img src="${sourceUrl}" draggable="false" /></main>
+    <footer>
+      <button id="fit">Lock ratio</button>
+      <span>Resize this window freely. It stays visible when the main app is in tray.</span>
+    </footer>
+    <script>
+      const button = document.getElementById("fit");
+      button.addEventListener("click", () => {
+        document.body.classList.toggle("free");
+        button.textContent = document.body.classList.contains("free") ? "Free ratio" : "Lock ratio";
+      });
+    </script>
+  </body>
+</html>`)}`
+  );
+}
+
 function createTray(): void {
   if (tray) return;
   const icon = nativeImage.createFromBuffer(
@@ -1359,6 +1436,10 @@ app.whenReady().then(() => {
 
   ipcMain.handle("app:set-fullscreen", async (_, enabled: boolean) => {
     mainWindow?.setFullScreen(enabled);
+  });
+
+  ipcMain.handle("app:open-reference-image", async (_, filePath: string, title: string) => {
+    createReferenceWindow(filePath, title);
   });
 
   ipcMain.handle("library:remove", async (_, itemId: string) => {

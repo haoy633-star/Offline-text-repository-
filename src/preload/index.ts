@@ -37,6 +37,7 @@ const api = {
   relaunchAsAdmin: (): Promise<void> => ipcRenderer.invoke("app:relaunch-admin"),
   quitApp: (): Promise<void> => ipcRenderer.invoke("app:quit"),
   setFullscreen: (enabled: boolean): Promise<void> => ipcRenderer.invoke("app:set-fullscreen", enabled),
+  openReferenceImage: (filePath: string, title: string): Promise<void> => ipcRenderer.invoke("app:open-reference-image", filePath, title),
   setPlayer: (category: LibraryCategory): Promise<AppSettings> => ipcRenderer.invoke("settings:set-player", category),
   clearPlayer: (category: LibraryCategory): Promise<AppSettings> => ipcRenderer.invoke("settings:clear-player", category),
   setLanguage: (language: AppLanguage): Promise<AppSettings> => ipcRenderer.invoke("settings:set-language", language),

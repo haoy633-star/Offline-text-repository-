@@ -50,16 +50,6 @@ type ViewMode = "grid" | "reader" | "viewer" | "help";
 type FilterKey = "all" | "favorite" | LibraryCategory;
 type FitMode = "page" | "width" | "actual";
 type DisplayMode = "paged" | "scroll";
-type ReferenceImage = {
-  id: string;
-  title: string;
-  path: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  keepRatio: boolean;
-};
 
 const categoryKeys: LibraryCategory[] = ["comic", "image", "text", "audio", "video", "series", "archive", "other"];
 const gridColumnOptions = [4, 5, 6] as const;
@@ -783,7 +773,6 @@ function App(): JSX.Element {
   const [editorMode, setEditorMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showGithubCard, setShowGithubCard] = useState(false);
-  const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>([]);
   const gridRef = useRef<HTMLDivElement | null>(null);
   const [, setProgressTick] = useState(0);
 
@@ -1168,50 +1157,7 @@ function App(): JSX.Element {
   function addReferenceImage(item: LibraryItem): void {
     const imagePath = currentReadableImage(item);
     if (!imagePath) return;
-    const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    setReferenceImages((current) => [
-      ...current,
-      {
-        id,
-        title: fileName(imagePath),
-        path: imagePath,
-        x: 96 + current.length * 24,
-        y: 96 + current.length * 24,
-        width: 260,
-        height: 360,
-        keepRatio: true
-      }
-    ]);
-  }
-
-  function updateReferenceImage(id: string, patch: Partial<ReferenceImage>): void {
-    setReferenceImages((current) => current.map((image) => (image.id === id ? { ...image, ...patch } : image)));
-  }
-
-  function closeReferenceImage(id: string): void {
-    setReferenceImages((current) => current.filter((image) => image.id !== id));
-  }
-
-  function startReferenceDrag(event: React.PointerEvent<HTMLDivElement>, image: ReferenceImage): void {
-    if ((event.target as HTMLElement).closest("button, input")) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    const startX = event.clientX;
-    const startY = event.clientY;
-    const originX = image.x;
-    const originY = image.y;
-
-    const onMove = (moveEvent: PointerEvent): void => {
-      updateReferenceImage(image.id, {
-        x: Math.max(0, originX + moveEvent.clientX - startX),
-        y: Math.max(0, originY + moveEvent.clientY - startY)
-      });
-    };
-    const onUp = (): void => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
+    void window.comicShelf.openReferenceImage(imagePath, fileName(imagePath));
   }
 
   async function toggleCoverCache(): Promise<void> {
@@ -1885,59 +1831,6 @@ function App(): JSX.Element {
           </div>
         </section>
       )}
-
-      {referenceImages.map((image) => (
-        <div
-          className="reference-float"
-          key={image.id}
-          style={{ left: image.x, top: image.y, width: image.width }}
-          onPointerDown={(event) => startReferenceDrag(event, image)}
-        >
-          <header>
-            <span title={image.title}>{t.referenceImage}: {image.title}</span>
-            <button title={t.closeReference} onClick={() => closeReferenceImage(image.id)}>
-              <X size={15} />
-            </button>
-          </header>
-          <img
-            src={window.comicShelf.assetUrl(image.path)}
-            alt={image.title}
-            style={{ width: image.width, height: image.keepRatio ? "auto" : image.height }}
-            draggable={false}
-          />
-          <div className="reference-controls">
-            <label>
-              <span>{t.referenceWidth}</span>
-              <input
-                type="range"
-                min={120}
-                max={720}
-                value={image.width}
-                onChange={(event) => {
-                  const width = Number(event.target.value);
-                  const ratio = image.height / Math.max(1, image.width);
-                  updateReferenceImage(image.id, { width, height: image.keepRatio ? Math.round(width * ratio) : image.height });
-                }}
-              />
-            </label>
-            {!image.keepRatio && (
-              <label>
-                <span>{t.referenceHeight}</span>
-                <input
-                  type="range"
-                  min={90}
-                  max={900}
-                  value={image.height}
-                  onChange={(event) => updateReferenceImage(image.id, { height: Number(event.target.value) })}
-                />
-              </label>
-            )}
-            <button onClick={() => updateReferenceImage(image.id, { keepRatio: !image.keepRatio })}>
-              {image.keepRatio ? t.keepRatio : t.freeRatio}
-            </button>
-          </div>
-        </div>
-      ))}
 
       {importProgress && (
         <div className="import-overlay" role="status" aria-live="polite">
