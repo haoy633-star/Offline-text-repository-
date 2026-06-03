@@ -28,6 +28,8 @@ export interface LibraryItem {
   updatedAt: string;
   lastOpenedAt: string | null;
   currentPage: number;
+  mediaPosition: number;
+  textScrollRatio: number;
   favorite: boolean;
 }
 
@@ -53,6 +55,7 @@ export interface AppSettings {
   archiveDirectory: string | null;
   scannedArchiveDirectories: string[];
   highPerformanceMode: boolean;
+  rememberProgressEnabled: boolean;
 }
 
 export interface ImportResult {

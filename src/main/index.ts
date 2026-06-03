@@ -386,7 +386,8 @@ async function readSettings(): Promise<AppSettings> {
       coverCacheDirectory: data.coverCacheDirectory ?? null,
       archiveDirectory: data.archiveDirectory ?? null,
       scannedArchiveDirectories: data.scannedArchiveDirectories ?? [],
-      highPerformanceMode: data.highPerformanceMode ?? false
+      highPerformanceMode: data.highPerformanceMode ?? false,
+      rememberProgressEnabled: data.rememberProgressEnabled ?? true
     };
   } catch {
     return {
@@ -400,7 +401,8 @@ async function readSettings(): Promise<AppSettings> {
       coverCacheDirectory: null,
       archiveDirectory: null,
       scannedArchiveDirectories: [],
-      highPerformanceMode: false
+      highPerformanceMode: false,
+      rememberProgressEnabled: true
     };
   }
 }
@@ -436,6 +438,8 @@ function migrateItem(raw: Partial<Omit<LibraryItem, "sourceType">> & { sourceTyp
     updatedAt: raw.updatedAt ?? now(),
     lastOpenedAt: raw.lastOpenedAt ?? null,
     currentPage: raw.currentPage ?? 0,
+    mediaPosition: raw.mediaPosition ?? 0,
+    textScrollRatio: raw.textScrollRatio ?? 0,
     favorite: raw.favorite ?? false
   };
 }
@@ -538,6 +542,8 @@ async function createComicFolderItem(folderPath: string, existing: LibraryItem |
     updatedAt: timestamp,
     lastOpenedAt: existing?.lastOpenedAt ?? null,
     currentPage: Math.min(existing?.currentPage ?? 0, pagePaths.length - 1),
+    mediaPosition: existing?.mediaPosition ?? 0,
+    textScrollRatio: existing?.textScrollRatio ?? 0,
     favorite: existing?.favorite ?? false
   };
 }
@@ -569,6 +575,8 @@ function createComicItemFromPages(folderPath: string, pagePaths: string[], exist
     updatedAt: timestamp,
     lastOpenedAt: existing?.lastOpenedAt ?? null,
     currentPage: Math.min(existing?.currentPage ?? 0, sortedPages.length - 1),
+    mediaPosition: existing?.mediaPosition ?? 0,
+    textScrollRatio: existing?.textScrollRatio ?? 0,
     favorite: existing?.favorite ?? false
   };
 }
@@ -597,6 +605,8 @@ async function createFileItem(filePath: string, existing: LibraryItem | undefine
     updatedAt: timestamp,
     lastOpenedAt: existing?.lastOpenedAt ?? null,
     currentPage: 0,
+    mediaPosition: existing?.mediaPosition ?? 0,
+    textScrollRatio: existing?.textScrollRatio ?? 0,
     favorite: existing?.favorite ?? false
   };
 }
@@ -626,6 +636,8 @@ async function createSeriesFolderItem(folderPath: string, existing: LibraryItem 
     updatedAt: timestamp,
     lastOpenedAt: existing?.lastOpenedAt ?? null,
     currentPage: 0,
+    mediaPosition: existing?.mediaPosition ?? 0,
+    textScrollRatio: existing?.textScrollRatio ?? 0,
     favorite: existing?.favorite ?? false
   };
 }
@@ -675,6 +687,8 @@ async function createArchiveItem(archivePath: string, existing: LibraryItem | un
     updatedAt: timestamp,
     lastOpenedAt: existing?.lastOpenedAt ?? null,
     currentPage: Math.min(existing?.currentPage ?? 0, pagePaths.length - 1),
+    mediaPosition: existing?.mediaPosition ?? 0,
+    textScrollRatio: existing?.textScrollRatio ?? 0,
     favorite: existing?.favorite ?? false
   };
 }
@@ -1441,6 +1455,35 @@ app.whenReady().then(() => {
     return item;
   });
 
+  ipcMain.handle(
+    "library:update-reading-state",
+    async (_, itemId: string, state: { page?: number; mediaPosition?: number; textScrollRatio?: number }) => {
+      const settings = await readSettings();
+      if (!settings.rememberProgressEnabled) {
+        return null;
+      }
+
+      const items = await readLibrary();
+      const item = items.find((entry) => entry.id === itemId);
+      if (!item) {
+        return null;
+      }
+
+      if (typeof state.page === "number") {
+        item.currentPage = Math.max(0, Math.min(state.page, Math.max(0, item.pageCount - 1)));
+      }
+      if (typeof state.mediaPosition === "number" && Number.isFinite(state.mediaPosition)) {
+        item.mediaPosition = Math.max(0, state.mediaPosition);
+      }
+      if (typeof state.textScrollRatio === "number" && Number.isFinite(state.textScrollRatio)) {
+        item.textScrollRatio = Math.max(0, Math.min(1, state.textScrollRatio));
+      }
+      item.lastOpenedAt = now();
+      await writeLibrary(items);
+      return item;
+    }
+  );
+
   ipcMain.handle("library:toggle-favorite", async (_, itemId: string) => {
     const items = await readLibrary();
     const item = items.find((entry) => entry.id === itemId);
@@ -1685,6 +1728,13 @@ app.whenReady().then(() => {
       const items = await rebuildCoverCache(await readLibrary());
       await writeLibrary(items);
     }
+    return snapshot(await readLibrary());
+  });
+
+  ipcMain.handle("settings:set-remember-progress", async (_, enabled: boolean) => {
+    const settings = await readSettings();
+    settings.rememberProgressEnabled = enabled;
+    await writeSettings(settings);
     return snapshot(await readLibrary());
   });
 

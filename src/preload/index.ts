@@ -24,6 +24,8 @@ const api = {
   },
   updateProgress: (itemId: string, page: number): Promise<LibraryItem | null> =>
     ipcRenderer.invoke("library:update-progress", itemId, page),
+  updateReadingState: (itemId: string, state: { page?: number; mediaPosition?: number; textScrollRatio?: number }): Promise<LibraryItem | null> =>
+    ipcRenderer.invoke("library:update-reading-state", itemId, state),
   toggleFavorite: (itemId: string): Promise<LibrarySnapshot> => ipcRenderer.invoke("library:toggle-favorite", itemId),
   updateTags: (itemId: string, tags: string[]): Promise<LibrarySnapshot> => ipcRenderer.invoke("library:update-tags", itemId, tags),
   renameItem: (itemId: string, title: string): Promise<LibrarySnapshot> => ipcRenderer.invoke("library:rename", itemId, title),
@@ -53,6 +55,7 @@ const api = {
   saveVideoCover: (itemId: string, dataUrl: string): Promise<LibrarySnapshot> => ipcRenderer.invoke("library:save-video-cover", itemId, dataUrl),
   clearCoverCache: (): Promise<LibrarySnapshot> => ipcRenderer.invoke("settings:clear-cover-cache"),
   setHighPerformance: (enabled: boolean): Promise<LibrarySnapshot> => ipcRenderer.invoke("settings:set-high-performance", enabled),
+  setRememberProgress: (enabled: boolean): Promise<LibrarySnapshot> => ipcRenderer.invoke("settings:set-remember-progress", enabled),
   revealInExplorer: (filePath: string): Promise<void> => ipcRenderer.invoke("file:reveal", filePath),
   readTextFile: (filePath: string): Promise<string> => ipcRenderer.invoke("file:read-text", filePath),
   readDocumentText: (filePath: string): Promise<string> => ipcRenderer.invoke("file:read-document-text", filePath),

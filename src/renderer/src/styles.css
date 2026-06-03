@@ -689,6 +689,85 @@ input[type="range"] {
   color: #78828f;
 }
 
+.document-cover {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  width: 100%;
+  height: 100%;
+  padding: 14px;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), transparent 34%),
+    #171b20;
+  color: #dbe6ef;
+}
+
+.document-cover-pdf {
+  background:
+    linear-gradient(180deg, rgba(229, 86, 77, 0.22), transparent 42%),
+    #1a1818;
+}
+
+.document-cover-word {
+  background:
+    linear-gradient(180deg, rgba(84, 144, 220, 0.24), transparent 42%),
+    #151a21;
+}
+
+.document-cover-ebook {
+  background:
+    linear-gradient(180deg, rgba(220, 168, 84, 0.22), transparent 42%),
+    #1b1813;
+}
+
+.document-cover-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #fff6e6;
+}
+
+.document-cover-top strong {
+  font-size: 13px;
+  letter-spacing: 0;
+}
+
+.document-cover p {
+  display: -webkit-box;
+  margin: 16px 0 0;
+  overflow: hidden;
+  color: #dce4ec;
+  font-size: 13px;
+  line-height: 1.65;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 9;
+  white-space: normal;
+}
+
+.document-cover-empty {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  min-height: 0;
+  text-align: center;
+}
+
+.document-cover-empty span {
+  color: #fff6e6;
+  font-size: 32px;
+  font-weight: 760;
+}
+
+.document-cover-empty small {
+  max-width: 100%;
+  margin-top: 8px;
+  overflow: hidden;
+  color: #aeb8c2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .category-text .missing-cover {
   color: #8cc4ff;
 }
@@ -1028,6 +1107,56 @@ input[type="range"] {
   color: #f6f2ea;
 }
 
+.document-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: min(1120px, calc(100vw - 420px));
+}
+
+.document-actions label {
+  display: grid;
+  grid-template-columns: auto 92px;
+  align-items: center;
+  gap: 6px;
+  color: #a8b0b8;
+  font-size: 11px;
+}
+
+.document-actions label input[type="range"] {
+  flex: none;
+  width: 92px;
+}
+
+.document-actions .color-control {
+  grid-template-columns: auto 34px;
+}
+
+.document-actions input[type="color"] {
+  width: 34px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 7px;
+  background: #20242a;
+}
+
+.font-import-button {
+  position: relative;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 7px;
+  background: #2b3036;
+  color: #f6f2ea !important;
+  cursor: pointer;
+}
+
+.font-import-button input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
 .zoom-label {
   min-width: 48px;
   color: #dbe1e7;
@@ -1195,6 +1324,10 @@ input[type="range"] {
   overflow: auto;
 }
 
+.pure-reading .internal-viewer {
+  padding: 0;
+}
+
 .internal-viewer video {
   width: min(100%, 1100px);
   max-height: calc(100vh - 140px);
@@ -1246,26 +1379,67 @@ input[type="range"] {
   width: min(100%, 760px);
 }
 
-.internal-viewer pre {
-  width: min(100%, 920px);
-  min-height: min(100%, 520px);
-  margin: 0;
-  padding: 22px;
-  overflow: auto;
+.document-reader {
+  display: grid;
+  width: min(100%, 1180px);
+  height: calc(100vh - 150px);
+  min-height: 0;
+  overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
-  background: #17191c;
-  color: #f6f2ea;
-  line-height: 1.75;
-  white-space: pre-wrap;
+  background: #101214;
+}
+
+.pure-reading .document-reader {
+  width: 100%;
+  height: 100vh;
+  border: 0;
+  border-radius: 0;
+}
+
+.pdf-reader {
+  background: #252a2f;
 }
 
 .document-frame {
-  width: min(100%, 1100px);
-  height: calc(100vh - 150px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  width: 100%;
+  height: 100%;
+  border: 0;
   background: #050607;
+}
+
+.text-reader-shell {
+  width: 100%;
+  max-width: none;
+  background: var(--doc-bg-color);
+}
+
+.document-text-scroll {
+  min-height: 0;
+  overflow: auto;
+  padding: 34px max(26px, 8vw);
+}
+
+.document-page {
+  width: min(100%, 980px);
+  min-height: 100%;
+  margin: 0 auto;
+  padding: 34px 42px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: var(--doc-page-color);
+  box-shadow: 0 22px 80px rgba(0, 0, 0, 0.3);
+}
+
+.document-page pre {
+  margin: 0;
+  color: var(--doc-text-color);
+  font-family: var(--doc-font-family);
+  font-size: var(--doc-font-size);
+  letter-spacing: var(--doc-letter-spacing);
+  line-height: var(--doc-line-height);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .document-fallback {

@@ -51,6 +51,15 @@ type ViewMode = "grid" | "reader" | "viewer" | "help";
 type FilterKey = "all" | "favorite" | LibraryCategory;
 type FitMode = "page" | "width" | "actual";
 type DisplayMode = "paged" | "scroll";
+type TextTheme = {
+  fontSize: number;
+  lineHeight: number;
+  letterSpacing: number;
+  fontFamily: string;
+  textColor: string;
+  pageColor: string;
+  backgroundColor: string;
+};
 type EditorDialog =
   | { kind: "rename"; item: LibraryItem; value: string }
   | { kind: "collection"; itemIds: string[]; value: string };
@@ -58,6 +67,15 @@ type EditorDialog =
 const categoryKeys: LibraryCategory[] = ["comic", "image", "text", "audio", "video", "series", "archive", "other"];
 const documentKinds: DocumentKind[] = ["plain", "pdf", "word", "ebook"];
 const gridColumnOptions = [4, 5, 6] as const;
+const defaultTextTheme: TextTheme = {
+  fontSize: 18,
+  lineHeight: 1.8,
+  letterSpacing: 0,
+  fontFamily: "system",
+  textColor: "#e7e1d8",
+  pageColor: "#17191c",
+  backgroundColor: "#0f1114"
+};
 const archiveCategoryFolders: Record<LibraryCategory, string> = {
   comic: "Comics",
   image: "Images",
@@ -161,6 +179,10 @@ const copy = {
     highPerformance: "高性能模式",
     enableHighPerformance: "启用高性能模式",
     disableHighPerformance: "关闭高性能模式",
+    rememberProgress: "记忆阅读进度",
+    enableRememberProgress: "开启记忆功能",
+    disableRememberProgress: "关闭记忆功能",
+    rememberProgressHint: "开启后会记住图片集页码、文本滚动位置、视频和音频播放进度。",
     preloadAll: "预加载全部内容",
     preloadingAll: "正在预加载全部内容",
     highPerformanceHint: "如果导入超过几千个文件，建议开启。它会使用更多内存和封面缓存，书架会按批次显示来保持流畅。",
@@ -200,6 +222,14 @@ const copy = {
     editorOn: "开启",
     pageFileName: "图片文件名",
     pinReference: "作为参考图",
+    textSettings: "文本设置",
+    fontSize: "字号",
+    lineHeight: "行距",
+    letterSpacing: "字距",
+    importFont: "导入字体",
+    textColor: "文字",
+    pageColor: "页面",
+    backgroundColor: "背景",
     referenceImage: "参考图",
     referenceWidth: "宽度",
     referenceHeight: "高度",
@@ -310,6 +340,10 @@ const copy = {
     highPerformance: "High performance mode",
     enableHighPerformance: "Enable high performance",
     disableHighPerformance: "Disable high performance",
+    rememberProgress: "Remember progress",
+    enableRememberProgress: "Enable memory",
+    disableRememberProgress: "Disable memory",
+    rememberProgressHint: "When enabled, the app remembers image pages, text scroll position, and video/audio playback time.",
     preloadAll: "Preload all content",
     preloadingAll: "Preloading all content",
     highPerformanceHint: "Recommended when importing thousands of files. It uses more memory and cover cache, while rendering the shelf in batches for smoothness.",
@@ -349,6 +383,14 @@ const copy = {
     editorOn: "On",
     pageFileName: "Image file name",
     pinReference: "Use as reference",
+    textSettings: "Text settings",
+    fontSize: "Font",
+    lineHeight: "Line",
+    letterSpacing: "Spacing",
+    importFont: "Import font",
+    textColor: "Text",
+    pageColor: "Page",
+    backgroundColor: "Background",
     referenceImage: "Reference image",
     referenceWidth: "Width",
     referenceHeight: "Height",
@@ -541,6 +583,18 @@ localizedCopy.en.categories.series = "Video Sets";
 localizedCopy.en.episode = "Video";
 localizedCopy.ja.categories.series = "動画集";
 localizedCopy.ja.episode = "動画";
+localizedCopy.ja.rememberProgress = "読書位置を記憶";
+localizedCopy.ja.enableRememberProgress = "記憶をオン";
+localizedCopy.ja.disableRememberProgress = "記憶をオフ";
+localizedCopy.ja.rememberProgressHint = "画像集のページ、テキストのスクロール位置、動画と音声の再生位置を記憶します。";
+localizedCopy.ja.textSettings = "テキスト設定";
+localizedCopy.ja.fontSize = "文字サイズ";
+localizedCopy.ja.lineHeight = "行間";
+localizedCopy.ja.letterSpacing = "字間";
+localizedCopy.ja.importFont = "フォント追加";
+localizedCopy.ja.textColor = "文字";
+localizedCopy.ja.pageColor = "ページ";
+localizedCopy.ja.backgroundColor = "背景";
 
 function helpParagraphs(language: AppLanguage): string[] {
   if (language === "en") {
@@ -596,7 +650,8 @@ function defaultSnapshot(): LibrarySnapshot {
       coverCacheDirectory: null,
       archiveDirectory: null,
       scannedArchiveDirectories: [],
-      highPerformanceMode: false
+      highPerformanceMode: false,
+      rememberProgressEnabled: true
     }
   };
 }
@@ -728,6 +783,27 @@ function VideoCoverPreview({ item }: { item: LibraryItem }): JSX.Element {
   );
 }
 
+function DocumentCover({ item }: { item: LibraryItem }): JSX.Element {
+  const suffix = documentTypeSuffix(item.sourcePath);
+  const preview = item.previewText?.trim();
+  return (
+    <div className={`document-cover document-cover-${documentKindForPath(item.sourcePath)}`}>
+      <div className="document-cover-top">
+        <FileText size={23} />
+        <strong>{suffix}</strong>
+      </div>
+      {preview ? (
+        <p>{preview}</p>
+      ) : (
+        <div className="document-cover-empty">
+          <span>{suffix}</span>
+          <small>{item.title}</small>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function statFromItems(items: LibraryItem[]): LibrarySnapshot["stats"] {
   return {
     items: items.length,
@@ -832,6 +908,13 @@ function App(): JSX.Element {
   const [pureReading, setPureReading] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [textContent, setTextContent] = useState("");
+  const [textTheme, setTextTheme] = useState<TextTheme>(() => {
+    try {
+      return { ...defaultTextTheme, ...JSON.parse(window.localStorage.getItem("offline-library-text-theme") ?? "{}") };
+    } catch {
+      return defaultTextTheme;
+    }
+  });
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
   const [tagEditorItem, setTagEditorItem] = useState<LibraryItem | null>(null);
   const [tagDraft, setTagDraft] = useState("");
@@ -850,6 +933,8 @@ function App(): JSX.Element {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showGithubCard, setShowGithubCard] = useState(false);
   const gridRef = useRef<HTMLDivElement | null>(null);
+  const documentScrollRef = useRef<HTMLDivElement | null>(null);
+  const readingSaveTimer = useRef<number | null>(null);
   const [, setProgressTick] = useState(0);
 
   const lang: AppLanguage = snapshot.settings.language ?? "zh";
@@ -938,6 +1023,10 @@ function App(): JSX.Element {
   }, [displayMode]);
 
   useEffect(() => {
+    window.localStorage.setItem("offline-library-text-theme", JSON.stringify(textTheme));
+  }, [textTheme]);
+
+  useEffect(() => {
     void refreshLibrary();
   }, []);
 
@@ -1018,6 +1107,18 @@ function App(): JSX.Element {
     }
     void window.comicShelf.readDocumentText(selectedItem.sourcePath).then(setTextContent).catch(() => setTextContent(""));
   }, [selectedItem, viewMode]);
+
+  useEffect(() => {
+    if (!selectedItem || viewMode !== "viewer" || selectedItem.category !== "text" || !textContent) return;
+    if (!snapshot.settings.rememberProgressEnabled) return;
+    const frame = window.requestAnimationFrame(() => {
+      const element = documentScrollRef.current;
+      if (!element) return;
+      const maxScroll = Math.max(0, element.scrollHeight - element.clientHeight);
+      element.scrollTop = maxScroll * Math.max(0, Math.min(1, selectedItem.textScrollRatio));
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [selectedItem?.id, selectedItem?.textScrollRatio, snapshot.settings.rememberProgressEnabled, textContent, viewMode]);
 
   useEffect(() => {
     if (!selectedItem || selectedItem.category !== "series") return;
@@ -1111,6 +1212,51 @@ function App(): JSX.Element {
 
   async function goToPage(page: number): Promise<void> {
     if (selectedItem) await markProgress(selectedItem, page);
+  }
+
+  function saveReadingState(item: LibraryItem, state: { page?: number; mediaPosition?: number; textScrollRatio?: number }): void {
+    if (!snapshot.settings.rememberProgressEnabled) return;
+    if (readingSaveTimer.current) window.clearTimeout(readingSaveTimer.current);
+    readingSaveTimer.current = window.setTimeout(() => {
+      void window.comicShelf.updateReadingState(item.id, state).then((updated) => {
+        if (!updated) return;
+        setSnapshot((current) => ({
+          ...current,
+          items: current.items.map((entry) => (entry.id === updated.id ? updated : entry))
+        }));
+      });
+    }, 700);
+  }
+
+  function restoreMediaPosition(event: React.SyntheticEvent<HTMLMediaElement>, item: LibraryItem): void {
+    if (!snapshot.settings.rememberProgressEnabled || item.mediaPosition <= 0) return;
+    const media = event.currentTarget;
+    if (Number.isFinite(media.duration) && item.mediaPosition < media.duration - 2) {
+      media.currentTime = item.mediaPosition;
+    }
+  }
+
+  function saveMediaPosition(event: React.SyntheticEvent<HTMLMediaElement>, item: LibraryItem): void {
+    saveReadingState(item, { mediaPosition: event.currentTarget.currentTime });
+  }
+
+  function saveTextScrollPosition(item: LibraryItem): void {
+    const element = documentScrollRef.current;
+    if (!element) return;
+    const maxScroll = Math.max(1, element.scrollHeight - element.clientHeight);
+    saveReadingState(item, { textScrollRatio: element.scrollTop / maxScroll });
+  }
+
+  async function importFont(event: React.ChangeEvent<HTMLInputElement>): Promise<void> {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const buffer = await file.arrayBuffer();
+    const family = `OfflineFont-${Date.now()}`;
+    const font = new FontFace(family, buffer);
+    await font.load();
+    document.fonts.add(font);
+    setTextTheme((current) => ({ ...current, fontFamily: family }));
   }
 
   function jumpToReaderPage(): void {
@@ -1340,6 +1486,11 @@ function App(): JSX.Element {
     }
   }
 
+  async function toggleRememberProgress(): Promise<void> {
+    const next = await window.comicShelf.setRememberProgress(!snapshot.settings.rememberProgressEnabled);
+    setSnapshot(next);
+  }
+
   async function preloadAllContent(): Promise<void> {
     const coverPaths = snapshot.items.map((item) => item.coverPath).filter((path): path is string => Boolean(path));
     const videoItems = snapshot.items.filter((item) => previewVideoPath(item) && !item.videoCoverPath);
@@ -1493,6 +1644,16 @@ function App(): JSX.Element {
 
   const shellClass = `app-shell ${pureReading ? "pure-reading" : ""}`;
   const readerImageClass = `reader-image fit-${fitMode}`;
+  const documentTextStyle = {
+    ["--doc-font-size" as string]: `${textTheme.fontSize}px`,
+    ["--doc-line-height" as string]: String(textTheme.lineHeight),
+    ["--doc-letter-spacing" as string]: `${textTheme.letterSpacing}px`,
+    ["--doc-font-family" as string]:
+      textTheme.fontFamily === "system" ? "\"Segoe UI\", \"Microsoft YaHei\", sans-serif" : `"${textTheme.fontFamily}"`,
+    ["--doc-text-color" as string]: textTheme.textColor,
+    ["--doc-page-color" as string]: textTheme.pageColor,
+    ["--doc-bg-color" as string]: textTheme.backgroundColor
+  };
 
   return (
     <main className={shellClass}>
@@ -1631,6 +1792,11 @@ function App(): JSX.Element {
             <button className="admin-button" onClick={() => void toggleHighPerformance()} disabled={busy}>
               <Shield size={16} />
               <span>{snapshot.settings.highPerformanceMode ? t.disableHighPerformance : t.enableHighPerformance}</span>
+            </button>
+            <p className="cache-hint">{t.rememberProgressHint}</p>
+            <button className="organize-button secondary" onClick={() => void toggleRememberProgress()} disabled={busy}>
+              <BookOpen size={16} />
+              <span>{snapshot.settings.rememberProgressEnabled ? t.disableRememberProgress : t.enableRememberProgress}</span>
             </button>
             <button className="organize-button secondary" onClick={() => void preloadAllContent()} disabled={busy}>
               <Settings size={16} />
@@ -1813,7 +1979,9 @@ function App(): JSX.Element {
                     </button>
                   )}
                   <button className="cover-button" onClick={() => (editorMode ? toggleSelected(item.id) : void openItem(item))}>
-                    {item.coverPath ? (
+                    {item.category === "text" ? (
+                      <DocumentCover item={item} />
+                    ) : item.coverPath ? (
                       <img src={window.comicShelf.assetUrl(item.coverPath)} alt={item.title} loading="lazy" />
                     ) : item.category === "video" || item.category === "series" ? (
                       <VideoCoverPreview item={item} />
@@ -1835,7 +2003,7 @@ function App(): JSX.Element {
                         {t.pageFileName}: {previewName}
                       </p>
                     )}
-                    {item.previewText && <p className="text-preview">{item.previewText}</p>}
+                    {item.previewText && item.category !== "text" && <p className="text-preview">{item.previewText}</p>}
                     {item.tags.length > 0 && (
                       <div className="tag-list">
                         {item.tags.map((tag) => (
@@ -1896,24 +2064,106 @@ function App(): JSX.Element {
 
       {viewMode === "viewer" && selectedItem && (
         <section className="reader-view">
-          <header className="reader-bar">
-            <button title={t.readerBack} onClick={closeReader}>
-              <X size={19} />
+          {!pureReading && (
+            <header className="reader-bar">
+              <button title={t.readerBack} onClick={closeReader}>
+                <X size={19} />
+              </button>
+              <div>
+                <h2 title={selectedItem.title}>{selectedItem.title}</h2>
+                <p>{t.internalViewer}</p>
+              </div>
+              <div className="reader-actions document-actions">
+                {selectedItem.category === "text" && documentKindForPath(selectedItem.sourcePath) !== "pdf" && (
+                  <>
+                    <label>
+                      <span>{t.fontSize}</span>
+                      <input
+                        type="range"
+                        min={12}
+                        max={34}
+                        value={textTheme.fontSize}
+                        onChange={(event) => setTextTheme((current) => ({ ...current, fontSize: Number(event.target.value) }))}
+                      />
+                    </label>
+                    <label>
+                      <span>{t.lineHeight}</span>
+                      <input
+                        type="range"
+                        min={1.2}
+                        max={2.6}
+                        step={0.1}
+                        value={textTheme.lineHeight}
+                        onChange={(event) => setTextTheme((current) => ({ ...current, lineHeight: Number(event.target.value) }))}
+                      />
+                    </label>
+                    <label>
+                      <span>{t.letterSpacing}</span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={6}
+                        step={0.5}
+                        value={textTheme.letterSpacing}
+                        onChange={(event) => setTextTheme((current) => ({ ...current, letterSpacing: Number(event.target.value) }))}
+                      />
+                    </label>
+                    <label className="color-control">
+                      <span>{t.textColor}</span>
+                      <input type="color" value={textTheme.textColor} onChange={(event) => setTextTheme((current) => ({ ...current, textColor: event.target.value }))} />
+                    </label>
+                    <label className="color-control">
+                      <span>{t.pageColor}</span>
+                      <input type="color" value={textTheme.pageColor} onChange={(event) => setTextTheme((current) => ({ ...current, pageColor: event.target.value }))} />
+                    </label>
+                    <label className="color-control">
+                      <span>{t.backgroundColor}</span>
+                      <input
+                        type="color"
+                        value={textTheme.backgroundColor}
+                        onChange={(event) => setTextTheme((current) => ({ ...current, backgroundColor: event.target.value }))}
+                      />
+                    </label>
+                    <label className="font-import-button">
+                      <span>{t.importFont}</span>
+                      <input type="file" accept=".ttf,.otf,.woff,.woff2" onChange={(event) => void importFont(event)} />
+                    </label>
+                  </>
+                )}
+                <button title={t.fullscreen} onClick={() => void enterFullscreenReading()}>
+                  <Maximize2 size={18} />
+                </button>
+                <button onClick={() => void openExternal(selectedItem)}>
+                  <Maximize2 size={18} />
+                  <span>{t.externalOpen}</span>
+                </button>
+              </div>
+            </header>
+          )}
+          {pureReading && (
+            <button className="exit-pure" onClick={() => void exitPureReading()}>
+              {t.exitPure}
             </button>
-            <div>
-              <h2 title={selectedItem.title}>{selectedItem.title}</h2>
-              <p>{t.internalViewer}</p>
-            </div>
-            <button onClick={() => void openExternal(selectedItem)}>
-              <Maximize2 size={18} />
-              <span>{t.externalOpen}</span>
-            </button>
-          </header>
+          )}
           <div className="internal-viewer">
-            {selectedItem.category === "video" && <video src={window.comicShelf.assetUrl(selectedItem.sourcePath)} controls />}
+            {selectedItem.category === "video" && (
+              <video
+                src={window.comicShelf.assetUrl(selectedItem.sourcePath)}
+                controls
+                onLoadedMetadata={(event) => restoreMediaPosition(event, selectedItem)}
+                onTimeUpdate={(event) => saveMediaPosition(event, selectedItem)}
+              />
+            )}
             {selectedItem.category === "series" && (
               <div className="series-viewer">
-                {selectedEpisodePath && <video src={window.comicShelf.assetUrl(selectedEpisodePath)} controls />}
+                {selectedEpisodePath && (
+                  <video
+                    src={window.comicShelf.assetUrl(selectedEpisodePath)}
+                    controls
+                    onLoadedMetadata={(event) => restoreMediaPosition(event, selectedItem)}
+                    onTimeUpdate={(event) => saveMediaPosition(event, selectedItem)}
+                  />
+                )}
                 <div className="episode-list">
                   {selectedItem.files.map((file, index) => (
                     <button
@@ -1928,12 +2178,33 @@ function App(): JSX.Element {
                 </div>
               </div>
             )}
-            {selectedItem.category === "audio" && <audio src={window.comicShelf.assetUrl(selectedItem.sourcePath)} controls />}
+            {selectedItem.category === "audio" && (
+              <audio
+                src={window.comicShelf.assetUrl(selectedItem.sourcePath)}
+                controls
+                onLoadedMetadata={(event) => restoreMediaPosition(event, selectedItem)}
+                onTimeUpdate={(event) => saveMediaPosition(event, selectedItem)}
+              />
+            )}
             {selectedItem.category === "text" &&
               (documentKindForPath(selectedItem.sourcePath) === "pdf" ? (
-                <iframe className="document-frame" src={window.comicShelf.assetUrl(selectedItem.sourcePath)} title={selectedItem.title} />
+                <div className="document-reader pdf-reader">
+                  <iframe className="document-frame" src={window.comicShelf.assetUrl(selectedItem.sourcePath)} title={selectedItem.title} />
+                </div>
               ) : textContent ? (
-                <pre>{textContent}</pre>
+                <div className="document-reader text-reader-shell" style={documentTextStyle}>
+                  <div
+                    ref={documentScrollRef}
+                    className="document-text-scroll"
+                    onScroll={() => {
+                      if (selectedItem) saveTextScrollPosition(selectedItem);
+                    }}
+                  >
+                    <article className="document-page">
+                      <pre>{textContent}</pre>
+                    </article>
+                  </div>
+                </div>
               ) : (
                 <div className="document-fallback">
                   <FileText size={42} />
