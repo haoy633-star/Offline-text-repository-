@@ -2,10 +2,12 @@ import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from "r
 import ReactDOM from "react-dom/client";
 import {
   BookOpen,
+  CheckSquare,
   ChevronsLeft,
   ChevronsRight,
   ChevronLeft,
   ChevronRight,
+  Edit3,
   FileArchive,
   FileImage,
   FileText,
@@ -26,6 +28,7 @@ import {
   Search,
   Settings,
   Shield,
+  Square,
   Star,
   Trash2,
   Video,
@@ -41,14 +44,35 @@ import type {
   LibrarySortKey
 } from "../../shared/types";
 import "./styles.css";
+import taoImage from "./assets/tao.jpg";
 
 type ViewMode = "grid" | "reader" | "viewer" | "help";
 type FilterKey = "all" | "favorite" | LibraryCategory;
 type FitMode = "page" | "width" | "actual";
 type DisplayMode = "paged" | "scroll";
+type ReferenceImage = {
+  id: string;
+  title: string;
+  path: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  keepRatio: boolean;
+};
 
 const categoryKeys: LibraryCategory[] = ["comic", "image", "text", "audio", "video", "series", "archive", "other"];
 const gridColumnOptions = [4, 5, 6] as const;
+const archiveCategoryFolders: Record<LibraryCategory, string> = {
+  comic: "Comics",
+  image: "Images",
+  text: "Text",
+  audio: "Audio",
+  video: "Video",
+  series: "Series",
+  archive: "Archives",
+  other: "Other"
+};
 
 const copy = {
   zh: {
@@ -69,11 +93,15 @@ const copy = {
     windowsDefault: "内置/系统默认",
     choosePlayer: "选择播放器",
     clearDefault: "恢复默认",
-    adminTools: "管理员工具",
+    adminTools: "资源工具",
     compressComicFolders: "文件夹漫画压缩为 CBZ",
     relaunchAdmin: "管理员模式重启",
-    organizeImported: "整理已导入资源",
+    organizeImported: "压缩/归档已导入资源",
     autoOrganize: "归档并分类已导入资源",
+    chooseArchiveFolder: "选择归档目录",
+    archiveFolder: "归档目录",
+    archiveConfirm: "将处理以下新资源，已在归档目录内的资源会跳过。是否继续？",
+    noNewArchiveItems: "没有需要归档的新资源。",
     organizeWarning:
       "这个操作会移动当前库中已导入资源的原始文件/文件夹到你接下来选择的新目录，并按分类放入子文件夹。旧位置的文件会被移走。请确认没有其它程序正在使用这些文件。",
     compressWarning:
@@ -82,6 +110,7 @@ const copy = {
     clearConfirm: "确定清空库吗？这不会删除你的原始文件，只会清空应用里的索引和缓存。",
     help: "使用方法",
     github: "GitHub",
+    quitApp: "退出软件",
     language: "中文 / English",
     openOrRead: "打开或阅读",
     reveal: "打开所在位置",
@@ -130,6 +159,8 @@ const copy = {
     highPerformance: "高性能模式",
     enableHighPerformance: "启用高性能模式",
     disableHighPerformance: "关闭高性能模式",
+    preloadAll: "预加载全部内容",
+    preloadingAll: "正在预加载全部内容",
     highPerformanceHint: "如果导入超过几千个文件，建议开启。它会使用更多内存和封面缓存，书架会按批次显示来保持流畅。",
     page: "页",
     jumpPage: "跳转页",
@@ -147,6 +178,32 @@ const copy = {
     pagedMode: "翻页",
     scrollMode: "滚动",
     episode: "剧集",
+    editorMode: "编辑者模式",
+    exitEditorMode: "退出编辑",
+    selectedCount: "已选择",
+    selectAll: "全选当前页",
+    clearSelection: "清除选择",
+    renameSelected: "重命名",
+    createComicFromImages: "选中图片新建漫画",
+    deleteSelectedFiles: "删除选中文件",
+    renamePrompt: "输入新名称。这个操作会同时重命名外部文件或文件夹。",
+    newComicPrompt: "输入新漫画文件夹名称。选中的图片会被移动到这个新文件夹里。",
+    deleteFilesConfirm: "确定删除选中的外部文件/文件夹吗？这个操作会从磁盘删除，不只是从库中移除。",
+    editorOnlyImages: "请先在图片分类中选择至少一张图片。",
+    editorDone: "编辑完成，外部文件已经同步更新。",
+    author: "作者",
+    githubPrompt: "是否打开 GitHub 项目页面？",
+    languageSetting: "界面语言",
+    editorOff: "关闭",
+    editorOn: "开启",
+    pageFileName: "图片文件名",
+    pinReference: "作为参考图",
+    referenceImage: "参考图",
+    referenceWidth: "宽度",
+    referenceHeight: "高度",
+    keepRatio: "锁定比例",
+    freeRatio: "自由比例",
+    closeReference: "关闭参考图",
     helpText:
       "导入文件夹：选择一个漫画文件夹或混合资料文件夹。多张图片组成的文件夹会被识别为漫画；散落单图会归入图片分类；文本、音频、视频、压缩包会自动归类。导入 CBZ / ZIP：用于导入漫画压缩包，应用会解包到缓存用于阅读。搜索：会匹配标题、原始路径和标签。排序：可按 A-Z、Z-A、最新导入、最早导入、最近打开排列。收藏：点爱心后会出现在收藏筛选中。标签：点卡片上的标签按钮，输入逗号分隔的标签，例如 已读, 喜欢, 作者名；之后可以用顶部 Tag 下拉筛选。每排数量：可以选择每行 4、5 或 6 个卡片；显示模式可以在翻页和滚动之间切换，文件很多时建议使用翻页和较少卡片。视频和电视剧：书架卡片会显示轻量视频预览，电视剧会使用第一集预览，打开后可以在内置播放器里选集。阅读器：方向键或空格翻页，第一页/最后一页按钮快速跳转，缩放和适应模式用于不同图片比例。全屏阅读会隐藏侧边栏、顶部工具栏和系统菜单。外部播放器：如果检测到 VLC、PotPlayer、Windows Media Player、SumatraPDF 等会自动使用，也可以手动指定。清空库：只清空应用索引和缓存，不删除原始文件。整理已导入资源：会把库里已导入的原始文件移动到你选择的新目录并按分类归档；压缩模式会把文件夹漫画压缩为 CBZ。归档并分类已导入资源：这是大型整理操作，会移动库中所有已导入资源到新目录下的 Comics、Images、Text、Audio、Video、Archives、Other，请务必先确认目标目录。",
     categories: {
@@ -178,11 +235,15 @@ const copy = {
     windowsDefault: "Built-in / system default",
     choosePlayer: "Choose player",
     clearDefault: "Clear player",
-    adminTools: "Admin Tools",
+    adminTools: "Resource Tools",
     compressComicFolders: "Compress folder comics to CBZ",
     relaunchAdmin: "Relaunch as Admin",
-    organizeImported: "Organize Imported Resources",
+    organizeImported: "Compress / Archive Imported Resources",
     autoOrganize: "Archive and Classify Imported Resources",
+    chooseArchiveFolder: "Choose archive folder",
+    archiveFolder: "Archive folder",
+    archiveConfirm: "The following new resources will be processed. Items already inside the archive folder will be skipped. Continue?",
+    noNewArchiveItems: "No new resources need archiving.",
     organizeWarning:
       "This will move original files/folders already imported in the library to a new folder you choose next, placing them into category subfolders. Files will be moved away from their old locations. Make sure no other app is using them.",
     compressWarning:
@@ -191,6 +252,7 @@ const copy = {
     clearConfirm: "Clear the library? Original files will not be deleted; only the app index and cache will be reset.",
     help: "Help",
     github: "GitHub",
+    quitApp: "Quit app",
     language: "中文 / English",
     openOrRead: "Open or read",
     reveal: "Reveal in folder",
@@ -239,6 +301,8 @@ const copy = {
     highPerformance: "High performance mode",
     enableHighPerformance: "Enable high performance",
     disableHighPerformance: "Disable high performance",
+    preloadAll: "Preload all content",
+    preloadingAll: "Preloading all content",
     highPerformanceHint: "Recommended when importing thousands of files. It uses more memory and cover cache, while rendering the shelf in batches for smoothness.",
     page: "Page",
     jumpPage: "Jump",
@@ -256,6 +320,32 @@ const copy = {
     pagedMode: "Pages",
     scrollMode: "Scroll",
     episode: "Episode",
+    editorMode: "Editor mode",
+    exitEditorMode: "Exit editor",
+    selectedCount: "Selected",
+    selectAll: "Select current page",
+    clearSelection: "Clear selection",
+    renameSelected: "Rename",
+    createComicFromImages: "Create comic from images",
+    deleteSelectedFiles: "Delete selected files",
+    renamePrompt: "Enter a new name. This also renames the external file or folder.",
+    newComicPrompt: "Enter the new comic folder name. Selected images will be moved into that folder.",
+    deleteFilesConfirm: "Delete the selected external files/folders from disk? This is not just removing them from the library.",
+    editorOnlyImages: "Select at least one image item in the Images category first.",
+    editorDone: "Edit complete. External files were updated too.",
+    author: "Author",
+    githubPrompt: "Open the GitHub project page?",
+    languageSetting: "Language",
+    editorOff: "Off",
+    editorOn: "On",
+    pageFileName: "Image file name",
+    pinReference: "Use as reference",
+    referenceImage: "Reference image",
+    referenceWidth: "Width",
+    referenceHeight: "Height",
+    keepRatio: "Lock ratio",
+    freeRatio: "Free ratio",
+    closeReference: "Close reference",
     helpText:
       "Import Folder: choose a comic folder or mixed media folder. Folders with multiple images are treated as comics; loose images go to Images; text, audio, video, and archives are classified automatically. Import CBZ / ZIP: imports comic archives and extracts them to app cache for reading. Search: matches title, original path, and tags. Sort: choose A-Z, Z-A, newest import, oldest import, or recently opened. Favorites: click the heart to keep an item in Favorites. Tags: click the tag button on a card and enter comma-separated tags such as Read, Favorite, Author. Then use the Tag dropdown to filter. Per row: choose 4, 5, or 6 cards per row. Mode switches between page-style and scroll-style browsing; for huge libraries, use page mode and fewer cards. Video and Series: shelf cards show lightweight video previews; Series previews the first episode and opens with a built-in episode selector. Reader: Arrow keys or Space turn pages; first/last buttons jump quickly; zoom and fit modes handle different image ratios. Fullscreen reading hides the sidebar, toolbar, and native menu. External players: common players such as VLC, PotPlayer, Windows Media Player, and SumatraPDF are detected automatically, and manual selection is still available. Clear Library: resets only the app index and cache, not original files. Organize Imported Resources: moves original imported files into a new destination folder and category subfolders. Compression mode converts folder comics to CBZ. Archive and Classify Imported Resources is a large operation that moves all imported resources into Comics, Images, Text, Audio, Video, Archives, and Other, so confirm the destination carefully.",
     categories: {
@@ -271,6 +361,184 @@ const copy = {
   }
 };
 
+const localizedCopy = {
+  ...copy,
+  ja: {
+    ...copy.en,
+    subtitle: "オフライン漫画とメディアライブラリ",
+    importHint: "フォルダーを取り込むと自動分類します。外部プレイヤーがない場合は内蔵ビューアーを使います。",
+    ready: "ライブラリの準備ができました。検索、分類、收藏から閲覧できます。",
+    search: "タイトルまたはパスを検索",
+    importFolder: "フォルダーを取り込む",
+    importArchive: "CBZ / ZIP を取り込む",
+    all: "すべて",
+    favorite: "お気に入り",
+    library: "ライブラリ",
+    visible: "件を表示",
+    noContent: "まだ内容がありません",
+    noContentHint: "混在フォルダーを取り込むと、漫画、画像、テキスト、音声、動画などを自動判定します。",
+    externalPlayers: "外部プレイヤー",
+    windowsDefault: "内蔵 / システム既定",
+    choosePlayer: "プレイヤーを選択",
+    clearDefault: "既定に戻す",
+    adminTools: "リソースツール",
+    compressComicFolders: "フォルダー漫画を CBZ に圧縮",
+    organizeImported: "取り込み済みリソースを圧縮 / 归档",
+    autoOrganize: "取り込み済みリソースを归档して分類",
+    chooseArchiveFolder: "归档フォルダーを選択",
+    archiveFolder: "归档フォルダー",
+    archiveConfirm: "次の新しいリソースを処理します。すでに归档フォルダー内にある項目はスキップします。続行しますか？",
+    noNewArchiveItems: "归档が必要な新しいリソースはありません。",
+    organizeWarning:
+      "この操作は取り込み済みの外部ファイル/フォルダーを選択した保存先へ移動し、分類フォルダーへ整理します。古い場所からは移動されるため、他のアプリで開いていないことを確認してください。",
+    compressWarning:
+      "圧縮モードはフォルダー漫画を CBZ に変換し、成功後に元フォルダーを削除します。動画、音声、テキストは通常再圧縮しません。",
+    clearLibrary: "ライブラリを空にする",
+    clearConfirm: "ライブラリを空にしますか？元ファイルは削除せず、アプリ内の索引とキャッシュだけをリセットします。",
+    help: "ヘルプ",
+    quitApp: "アプリを終了",
+    language: "中文 / English / 日本語",
+    openOrRead: "開く / 読む",
+    reveal: "場所を開く",
+    remove: "ライブラリから削除",
+    removeDone: "ライブラリから削除しました。元ファイルは削除していません。",
+    favorited: "お気に入りに追加しました",
+    unfavorited: "お気に入りから外しました",
+    cancelled: "キャンセルしました。",
+    clearDone: "ライブラリを空にしました。元ファイルは削除していません。",
+    organizeDone: "整理が完了しました",
+    moved: "移動",
+    compressed: "圧縮",
+    skipped: "スキップ",
+    target: "保存先",
+    source: "ソース",
+    readerBack: "ライブラリへ戻る",
+    prev: "前のページ",
+    next: "次のページ",
+    first: "最初のページ",
+    last: "最後のページ",
+    zoomIn: "拡大",
+    zoomOut: "縮小",
+    resetZoom: "ズームをリセット",
+    fullscreen: "全画面読書",
+    importingTitle: "処理中です。終了しないでください",
+    elapsed: "経過",
+    remaining: "残り目安",
+    sort: "並び順",
+    sortAz: "A から Z",
+    sortZa: "Z から A",
+    sortNewest: "新しい取り込み順",
+    sortOldest: "古い取り込み順",
+    sortRecent: "最近開いた順",
+    editTags: "タグ編集",
+    tagPrompt: "タグをカンマ区切りで入力",
+    tagEditor: "タグ編集",
+    save: "保存",
+    cancel: "キャンセル",
+    allTags: "すべてのタグ",
+    coverCache: "表紙キャッシュ",
+    enableCache: "表紙キャッシュを有効化",
+    disableCache: "無効化してキャッシュ削除",
+    chooseCacheFolder: "キャッシュフォルダーを選択",
+    cacheFolder: "キャッシュフォルダー",
+    cacheHint: "既定ではオフです。有効にすると少量のメモリ/ディスクを使って表紙表示を高速化します。",
+    highPerformance: "高性能モード",
+    enableHighPerformance: "高性能モードを有効化",
+    disableHighPerformance: "高性能モードを無効化",
+    preloadAll: "すべてをプリロード",
+    preloadingAll: "プリロード中",
+    highPerformanceHint: "数千件以上を取り込む場合に推奨します。メモリと表紙キャッシュを多めに使い、一覧を軽く表示します。",
+    page: "ページ",
+    jumpPage: "移動",
+    nextPage: "次ページ",
+    prevPage: "前ページ",
+    fitPage: "ページに合わせる",
+    fitWidth: "幅に合わせる",
+    actualSize: "原寸",
+    pureMode: "読書専用",
+    exitPure: "読書専用を終了",
+    externalOpen: "外部アプリで開く",
+    internalViewer: "内蔵ビューアー",
+    columnsPerRow: "1行の数",
+    displayMode: "表示モード",
+    pagedMode: "ページ",
+    scrollMode: "スクロール",
+    episode: "エピソード",
+    editorMode: "編集者モード",
+    exitEditorMode: "編集を終了",
+    selectedCount: "選択中",
+    selectAll: "現在ページを選択",
+    clearSelection: "選択解除",
+    renameSelected: "名前変更",
+    createComicFromImages: "画像から漫画を作成",
+    deleteSelectedFiles: "選択ファイルを削除",
+    renamePrompt: "新しい名前を入力してください。外部ファイルまたはフォルダー名も同時に変更します。",
+    newComicPrompt: "新しい漫画フォルダー名を入力してください。選択した画像をそのフォルダーへ移動します。",
+    deleteFilesConfirm: "選択した外部ファイル/フォルダーをディスクから削除しますか？ライブラリから消すだけではありません。",
+    editorOnlyImages: "先に画像カテゴリで画像項目を少なくとも1つ選択してください。",
+    editorDone: "編集が完了しました。外部ファイルも更新しました。",
+    author: "作者",
+    githubPrompt: "GitHub プロジェクトページを開きますか？",
+    languageSetting: "表示言語",
+    editorOff: "オフ",
+    editorOn: "オン",
+    pageFileName: "画像ファイル名",
+    pinReference: "参考画像にする",
+    referenceImage: "参考画像",
+    referenceWidth: "幅",
+    referenceHeight: "高さ",
+    keepRatio: "比率固定",
+    freeRatio: "自由比率",
+    closeReference: "参考画像を閉じる",
+    helpText:
+      "取り込み: フォルダー取り込みは混在フォルダーを走査し、複数画像のフォルダーを漫画、単独画像を画像、テキスト/音声/動画/圧縮ファイルを各分類へ入れます。\n閲覧: 漫画と画像は内蔵リーダーで開き、方向キー、スペース、前後ボタンでページ移動できます。ズーム、幅合わせ、全画面読書も使えます。\n一覧: 検索はタイトル、パス、タグを対象にします。並び順、タグ、カテゴリ、1行の表示数、ページ/スクロール表示を切り替えられます。大量ファイルではページ表示とプリロードがおすすめです。\n編集者モード: 上部の編集者モードをオンにすると複数選択できます。画像カテゴリで画像を選び「画像から漫画を作成」を押すと、実際の画像ファイルを新フォルダーへ移動し、新しい漫画として登録します。名前変更は外部ファイル/フォルダー名も変更します。削除はディスク上の実ファイルを削除するため確認してください。\n归档/圧縮: 归档フォルダーを設定すると新しい取り込み内容を分類フォルダーへ移動できます。圧縮はフォルダー漫画を CBZ に変換します。どちらも大きな操作なので、確認画面と進捗バーを見て完了を待ってください。\n外部プレイヤー: 動画、音声、テキストなどは検出済みプレイヤーまたは Windows 既定アプリで開けます。手動でプレイヤーを指定することもできます。\nキャッシュと高性能: 表紙キャッシュ、動画静止画、すべてをプリロードを使うと一覧表示が速くなります。容量を戻したい場合はキャッシュ削除を使います。\nトレイ: 閉じるとトレイへ最小化します。完全終了は左側の終了ボタンまたはトレイメニューから行います。",
+    categories: {
+      comic: "漫画",
+      image: "画像",
+      text: "テキスト",
+      audio: "音声",
+      video: "動画",
+      series: "テレビ/シリーズ",
+      archive: "圧縮ファイル",
+      other: "その他"
+    }
+  }
+};
+
+function helpParagraphs(language: AppLanguage): string[] {
+  if (language === "en") {
+    return [
+      "Importing: Use Import Folder for normal folders or mixed folders. The app scans subfolders, treats image-heavy folders as comics, loose pictures as Images, multi-video folders as Series, and text/audio/video/archive files as their own categories. Use Import CBZ / ZIP when the comic is already compressed.",
+      "Browsing: Search matches title, path, and tags. Category buttons filter the shelf. Favorites are toggled with the heart button. Sort can use A-Z, Z-A, newest import, oldest import, or recently opened. The Tag dropdown filters custom tags.",
+      "Display performance: Per row controls how many cards appear on each row. Pages mode renders only the current page and is faster for huge libraries; Scroll mode behaves like the older continuous shelf. Preload all content loads covers and video still images in advance.",
+      "Reading: Comics and images open in the built-in reader. Use arrow keys, Space, previous/next buttons, first/last buttons, the page slider, zoom, fit-to-page, fit-to-width, and fullscreen reading. Pure reading hides the sidebar and toolbar.",
+      "Editor mode: Turn on Editor mode in the top bar, select cards, then rename one selected item, delete selected external files, or create a new comic from selected Images. These actions change the real files/folders on disk, not only the app database, so read the confirmation dialogs carefully.",
+      "Tags: Click the tag button on a card, enter comma-separated tags, and save. Tags stay in the app library and can be used for filtering, for example Read, Favorite, Artist, or Series.",
+      "Archive and compression: Choose an archive folder first if you want a fixed destination. Compress / Archive Imported Resources can move imported items into category folders and optionally convert folder comics into CBZ. Archive and Classify Imported Resources is a larger move operation and shows progress.",
+      "Players and viewers: If an external player is detected or manually selected, the app can open video/audio/text with that player. Otherwise it uses the built-in viewer or Windows default app. Reveal opens the file location in Explorer.",
+      "Cache and high performance: Cover cache stores WebP-like cover previews and video stills for faster loading. High performance mode enables more caching. Clear cache removes generated previews only; Clear Library resets the app index without deleting original files.",
+      "Tray and exit: Closing the window minimizes to the system tray. Use Quit app in the sidebar or the tray menu when you want to fully exit."
+    ];
+  }
+
+  if (language === "ja") {
+    return localizedCopy.ja.helpText.split("\n");
+  }
+
+  return [
+    "导入：导入文件夹适合普通漫画文件夹和混合大文件夹。软件会扫描子文件夹，把图片数量很多的文件夹识别成漫画，把散落的单张图片放进图片分类，把多集视频文件夹识别成电视剧/系列，把文本、音频、视频、压缩包放进对应分类。导入 CBZ / ZIP 用来导入已经压缩好的漫画包。",
+    "浏览：搜索会匹配标题、文件路径和 tag。左侧分类按钮可以只看漫画、图片、文本、音频、视频、电视剧、压缩包或收藏。爱心按钮用于收藏。排序支持 A-Z、Z-A、最新导入、最早导入、最近打开。Tag 下拉框可以按自定义标签筛选。",
+    "显示和性能：每排数量可以控制一行显示多少卡片。翻页模式只渲染当前页，文件很多时更快；滚动模式是连续书架。预加载全部内容会提前加载封面和视频静态预览，减少翻页时卡顿。",
+    "阅读：漫画和图片会进入内置阅读器。可以用方向键、空格、上一页/下一页、第一页/最后一页、滑条、缩放、适应页面、适应宽度。全屏阅读会隐藏侧边栏和顶部工具栏，纯阅读模式更适合连续看漫画。",
+    "编辑者模式：在顶端打开编辑者模式后，可以批量选择卡片。选择一个项目可以重命名；选择图片分类里的散图后可以新建成一个漫画文件夹；也可以删除选中的外部文件。注意这些操作会同步修改磁盘上的真实文件/文件夹，不只是修改软件内部索引，所以请确认弹窗内容。",
+    "Tag：点击卡片上的标签按钮，输入用逗号分隔的标签并保存。之后可以在顶部 Tag 下拉框筛选，例如 已读、喜欢、作者名、系列名。",
+    "归档和压缩：先选择归档目录可以固定保存位置。压缩/归档已导入资源会把资源移动到分类文件夹中，勾选压缩时会把文件夹漫画转成 CBZ。归档并分类已导入资源是大型移动操作，会显示进度条，建议等待完成后再关闭软件。",
+    "播放器：视频、音频、文本等可以使用自动检测到的外部播放器，也可以手动指定播放器。如果没有外部播放器，软件会使用内置查看器或 Windows 默认程序。打开所在位置会在资源管理器中定位文件。",
+    "缓存和高性能：封面缓存会保存更快读取的封面和视频静态预览；高性能模式会启用更多缓存。清除缓存只删除生成的预览，不删除原始文件。清空库只重置软件索引，不删除磁盘文件。",
+    "托盘和退出：关闭窗口会最小化到系统托盘。需要完全退出时，用左侧退出软件按钮，或托盘菜单里的退出。"
+  ];
+}
+
 function defaultSnapshot(): LibrarySnapshot {
   return {
     items: [],
@@ -280,7 +548,16 @@ function defaultSnapshot(): LibrarySnapshot {
       pages: 0,
       categories: { comic: 0, image: 0, text: 0, audio: 0, video: 0, series: 0, archive: 0, other: 0 }
     },
-    settings: { players: {}, detectedPlayers: {}, language: "zh", coverCacheEnabled: false, coverCacheDirectory: null, highPerformanceMode: false }
+    settings: {
+      players: {},
+      detectedPlayers: {},
+      language: "zh",
+      coverCacheEnabled: false,
+      coverCacheDirectory: null,
+      archiveDirectory: null,
+      scannedArchiveDirectories: [],
+      highPerformanceMode: false
+    }
   };
 }
 
@@ -303,6 +580,21 @@ function fileName(filePath: string): string {
   return filePath.split(/[\\/]/).pop() ?? filePath;
 }
 
+function isInsidePath(parentPath: string, childPath: string): boolean {
+  const normalizedParent = parentPath.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  const normalizedChild = childPath.replace(/\\/g, "/").toLowerCase();
+  return normalizedChild === normalizedParent || normalizedChild.startsWith(`${normalizedParent}/`);
+}
+
+function isInsideArchive(item: LibraryItem, archiveDirectory: string | null): boolean {
+  if (!archiveDirectory) return false;
+  if (!isInsidePath(archiveDirectory, item.sourcePath)) return false;
+  if (isInsidePath(`${archiveDirectory}/${archiveCategoryFolders[item.category]}`, item.sourcePath)) return true;
+  const relativePath = item.sourcePath.replace(/\\/g, "/").slice(archiveDirectory.replace(/\\/g, "/").replace(/\/+$/, "").length + 1);
+  const firstFolder = relativePath.split("/")[0];
+  return Object.values(archiveCategoryFolders).includes(firstFolder);
+}
+
 function previewVideoPath(item: LibraryItem): string | null {
   if (item.category === "video") return item.sourcePath;
   if (item.category === "series") return item.files.find((file) => file.category === "video")?.path ?? null;
@@ -311,6 +603,7 @@ function previewVideoPath(item: LibraryItem): string | null {
 
 function VideoCoverPreview({ item }: { item: LibraryItem }): JSX.Element {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [hovered, setHovered] = useState(false);
   const sourcePath = previewVideoPath(item);
 
   function seekPreviewFrame(): void {
@@ -344,19 +637,30 @@ function VideoCoverPreview({ item }: { item: LibraryItem }): JSX.Element {
   }
 
   return (
-    <video
-      ref={videoRef}
-      className="cover-video"
-      src={window.comicShelf.assetUrl(sourcePath)}
-      muted
-      loop
-      playsInline
-      preload="metadata"
-      onLoadedMetadata={seekPreviewFrame}
-      onSeeked={pausePreview}
-      onMouseEnter={playPreview}
-      onMouseLeave={pausePreview}
-    />
+    <div className="video-preview-shell" onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
+      {item.videoCoverPath ? (
+        <img src={window.comicShelf.assetUrl(item.videoCoverPath)} alt={item.title} loading="lazy" />
+      ) : (
+        <div className="missing-cover video-cover">
+          <Video size={38} />
+        </div>
+      )}
+      {hovered && (
+        <video
+          ref={videoRef}
+          className="cover-video"
+          src={window.comicShelf.assetUrl(sourcePath)}
+          muted
+          loop
+          playsInline
+          preload="metadata"
+          onLoadedMetadata={seekPreviewFrame}
+          onSeeked={playPreview}
+          onMouseEnter={playPreview}
+          onMouseLeave={pausePreview}
+        />
+      )}
+    </div>
   );
 }
 
@@ -390,6 +694,64 @@ function estimatedRemaining(progress: ImportProgress): number {
   return elapsed * (1 / ratio - 1);
 }
 
+function preloadImage(url: string): Promise<void> {
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () => resolve();
+    image.onerror = () => resolve();
+    image.src = url;
+  });
+}
+
+function captureVideoCover(url: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const video = document.createElement("video");
+    let done = false;
+    const finish = (dataUrl: string | null): void => {
+      if (done) return;
+      done = true;
+      video.removeAttribute("src");
+      video.load();
+      resolve(dataUrl);
+    };
+    const timer = window.setTimeout(() => finish(null), 8000);
+    video.preload = "metadata";
+    video.muted = true;
+    video.playsInline = true;
+    video.crossOrigin = "anonymous";
+    video.onloadedmetadata = () => {
+      if (Number.isFinite(video.duration) && video.duration > 0) {
+        video.currentTime = Math.min(Math.max(1, video.duration * 0.08), Math.max(0.1, video.duration - 0.1));
+      } else {
+        window.clearTimeout(timer);
+        finish(null);
+      }
+    };
+    video.onseeked = () => {
+      window.clearTimeout(timer);
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, video.videoWidth);
+        canvas.height = Math.max(1, video.videoHeight);
+        const context = canvas.getContext("2d");
+        if (!context || canvas.width <= 1 || canvas.height <= 1) {
+          finish(null);
+          return;
+        }
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        finish(canvas.toDataURL("image/jpeg", 0.78));
+      } catch {
+        finish(null);
+      }
+    };
+    video.onerror = () => {
+      window.clearTimeout(timer);
+      finish(null);
+    };
+    video.src = url;
+  });
+}
+
 function App(): JSX.Element {
   const [snapshot, setSnapshot] = useState<LibrarySnapshot>(defaultSnapshot());
   const [query, setQuery] = useState("");
@@ -418,17 +780,25 @@ function App(): JSX.Element {
   );
   const [selectedEpisodePath, setSelectedEpisodePath] = useState<string | null>(null);
   const [pageDraft, setPageDraft] = useState("1");
+  const [editorMode, setEditorMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [showGithubCard, setShowGithubCard] = useState(false);
+  const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>([]);
   const gridRef = useRef<HTMLDivElement | null>(null);
   const [, setProgressTick] = useState(0);
 
   const lang: AppLanguage = snapshot.settings.language ?? "zh";
-  const t = copy[lang];
+  const t = localizedCopy[lang];
   const [notice, setNotice] = useState(copy.zh.importHint);
   const deferredQuery = useDeferredValue(query);
 
   const selectedItem = useMemo(
     () => snapshot.items.find((item) => item.id === selectedItemId) ?? null,
     [selectedItemId, snapshot.items]
+  );
+  const selectedEditorItems = useMemo(
+    () => snapshot.items.filter((item) => selectedIds.includes(item.id)),
+    [selectedIds, snapshot.items]
   );
 
   const filteredItems = useMemo(() => {
@@ -481,6 +851,11 @@ function App(): JSX.Element {
   }, [displayMode, filter, gridColumns, query, sortKey, tagFilter]);
 
   useEffect(() => {
+    const existingIds = new Set(snapshot.items.map((item) => item.id));
+    setSelectedIds((current) => current.filter((id) => existingIds.has(id)));
+  }, [snapshot.items]);
+
+  useEffect(() => {
     setPageDraft(String(Math.min(page, pageCount)));
   }, [page, pageCount]);
 
@@ -509,7 +884,7 @@ function App(): JSX.Element {
   }, [importProgress]);
 
   useEffect(() => {
-    setNotice(copy[lang].importHint);
+    setNotice(localizedCopy[lang].importHint);
   }, [lang]);
 
   useEffect(() => {
@@ -579,7 +954,7 @@ function App(): JSX.Element {
   async function refreshLibrary(): Promise<void> {
     const data = await window.comicShelf.getLibrary();
     setSnapshot(data);
-    if (data.items.length > 0) setNotice(copy[data.settings.language ?? "zh"].ready);
+    if (data.items.length > 0) setNotice(localizedCopy[data.settings.language ?? "zh"].ready);
   }
 
   function updateItems(items: LibraryItem[]): void {
@@ -712,6 +1087,133 @@ function App(): JSX.Element {
     setSnapshot((current) => ({ ...current, settings }));
   }
 
+  async function cycleLanguage(): Promise<void> {
+    const languages: AppLanguage[] = ["zh", "en", "ja"];
+    const currentIndex = Math.max(0, languages.indexOf(lang));
+    await setLanguage(languages[(currentIndex + 1) % languages.length]);
+  }
+
+  function toggleEditorMode(): void {
+    setEditorMode((enabled) => !enabled);
+    setSelectedIds([]);
+  }
+
+  function toggleSelected(itemId: string): void {
+    setSelectedIds((current) => (current.includes(itemId) ? current.filter((id) => id !== itemId) : [...current, itemId]));
+  }
+
+  function selectVisibleItems(): void {
+    setSelectedIds((current) => [...new Set([...current, ...visibleItems.map((item) => item.id)])]);
+  }
+
+  async function renameSelectedItem(): Promise<void> {
+    const item = selectedEditorItems[0];
+    if (!item) return;
+    const value = window.prompt(t.renamePrompt, item.title);
+    if (!value?.trim()) return;
+    const next = await window.comicShelf.renameItem(item.id, value.trim());
+    setSnapshot(next);
+    setSelectedIds([]);
+    setNotice(t.editorDone);
+  }
+
+  async function createComicFromSelectedImages(): Promise<void> {
+    const images = selectedEditorItems.filter((item) => item.category === "image");
+    if (images.length === 0) {
+      window.alert(t.editorOnlyImages);
+      return;
+    }
+    const value = window.prompt(t.newComicPrompt, "New Comic");
+    if (!value?.trim()) return;
+    setBusy(true);
+    try {
+      const next = await window.comicShelf.createComicFromImages(
+        images.map((item) => item.id),
+        value.trim()
+      );
+      setSnapshot(next);
+      setSelectedIds([]);
+      setFilter("comic");
+      setNotice(t.editorDone);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteSelectedFiles(): Promise<void> {
+    if (selectedIds.length === 0) return;
+    if (!window.confirm(t.deleteFilesConfirm)) return;
+    setBusy(true);
+    try {
+      const next = await window.comicShelf.deleteItems(selectedIds);
+      setSnapshot(next);
+      setSelectedIds([]);
+      setNotice(t.editorDone);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function showGithubInfo(): void {
+    setShowGithubCard(true);
+  }
+
+  function currentReadableImage(item: LibraryItem): string | null {
+    if ((item.category === "comic" || item.category === "image") && item.pagePaths.length > 0) {
+      return item.pagePaths[Math.max(0, Math.min(item.currentPage, item.pagePaths.length - 1))];
+    }
+    return item.coverPath;
+  }
+
+  function addReferenceImage(item: LibraryItem): void {
+    const imagePath = currentReadableImage(item);
+    if (!imagePath) return;
+    const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    setReferenceImages((current) => [
+      ...current,
+      {
+        id,
+        title: fileName(imagePath),
+        path: imagePath,
+        x: 96 + current.length * 24,
+        y: 96 + current.length * 24,
+        width: 260,
+        height: 360,
+        keepRatio: true
+      }
+    ]);
+  }
+
+  function updateReferenceImage(id: string, patch: Partial<ReferenceImage>): void {
+    setReferenceImages((current) => current.map((image) => (image.id === id ? { ...image, ...patch } : image)));
+  }
+
+  function closeReferenceImage(id: string): void {
+    setReferenceImages((current) => current.filter((image) => image.id !== id));
+  }
+
+  function startReferenceDrag(event: React.PointerEvent<HTMLDivElement>, image: ReferenceImage): void {
+    if ((event.target as HTMLElement).closest("button, input")) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const originX = image.x;
+    const originY = image.y;
+
+    const onMove = (moveEvent: PointerEvent): void => {
+      updateReferenceImage(image.id, {
+        x: Math.max(0, originX + moveEvent.clientX - startX),
+        y: Math.max(0, originY + moveEvent.clientY - startY)
+      });
+    };
+    const onUp = (): void => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
+
   async function toggleCoverCache(): Promise<void> {
     if (snapshot.settings.coverCacheEnabled) {
       await clearCoverCache();
@@ -740,6 +1242,19 @@ function App(): JSX.Element {
     setSnapshot(next);
   }
 
+  async function chooseArchiveDirectory(): Promise<void> {
+    setBusy(true);
+    try {
+      setImportProgress({ phase: "scanning", current: 0, total: 1, message: "Scanning archive folder", startedAt: Date.now() });
+      const next = await window.comicShelf.setArchiveDirectory();
+      setSnapshot(next);
+      setViewMode("grid");
+    } finally {
+      setImportProgress(null);
+      setBusy(false);
+    }
+  }
+
   async function toggleHighPerformance(): Promise<void> {
     const enable = !snapshot.settings.highPerformanceMode;
     const next = await window.comicShelf.setHighPerformance(enable);
@@ -749,11 +1264,52 @@ function App(): JSX.Element {
     }
   }
 
+  async function preloadAllContent(): Promise<void> {
+    const coverPaths = snapshot.items.map((item) => item.coverPath).filter((path): path is string => Boolean(path));
+    const videoItems = snapshot.items.filter((item) => previewVideoPath(item) && !item.videoCoverPath);
+    const tasks = [
+      ...coverPaths.map((path) => ({ type: "cover" as const, path })),
+      ...videoItems.map((item) => ({ type: "video" as const, item, path: previewVideoPath(item)! }))
+    ];
+    if (tasks.length === 0) return;
+
+    setBusy(true);
+    const startedAt = Date.now();
+    try {
+      for (let index = 0; index < tasks.length; index += 1) {
+        const task = tasks[index];
+        setImportProgress({
+          phase: "importing",
+          current: index,
+          total: tasks.length,
+          message: `${t.preloadingAll}: ${fileName(task.path)}`,
+          startedAt
+        });
+        const url = window.comicShelf.assetUrl(task.path);
+        if (task.type === "cover") {
+          await preloadImage(url);
+        } else {
+          const dataUrl = await captureVideoCover(url);
+          if (dataUrl) {
+            const next = await window.comicShelf.saveVideoCover(task.item.id, dataUrl);
+            setSnapshot(next);
+          }
+        }
+      }
+      setImportProgress({ phase: "done", current: tasks.length, total: tasks.length, message: "Done", startedAt });
+    } finally {
+      setImportProgress(null);
+      setBusy(false);
+    }
+  }
+
   async function organizeComics(): Promise<void> {
+    if (!confirmArchivePlan()) return;
     if (!window.confirm(t.organizeWarning)) return;
     if (compressFolders && !window.confirm(t.compressWarning)) return;
     setBusy(true);
     try {
+      setImportProgress({ phase: "scanning", current: 0, total: snapshot.items.length, message: "Preparing archive/compression", startedAt: Date.now() });
       const result = await window.comicShelf.organizeComics(compressFolders);
       updateItems(result.items);
       setViewMode("grid");
@@ -763,14 +1319,17 @@ function App(): JSX.Element {
           : t.cancelled
       );
     } finally {
+      setImportProgress(null);
       setBusy(false);
     }
   }
 
   async function autoOrganizeFolder(): Promise<void> {
+    if (!confirmArchivePlan()) return;
     if (!window.confirm(t.organizeWarning)) return;
     setBusy(true);
     try {
+      setImportProgress({ phase: "scanning", current: 0, total: snapshot.items.length, message: "Preparing archive classification", startedAt: Date.now() });
       const result = await window.comicShelf.autoOrganizeFolder();
       if (result.destinationPath) {
         updateItems(result.items);
@@ -782,8 +1341,23 @@ function App(): JSX.Element {
           : t.cancelled
       );
     } finally {
+      setImportProgress(null);
       setBusy(false);
     }
+  }
+
+  function confirmArchivePlan(): boolean {
+    const candidates = snapshot.items.filter((item) => !isInsideArchive(item, snapshot.settings.archiveDirectory));
+    if (snapshot.settings.archiveDirectory && candidates.length === 0) {
+      window.alert(t.noNewArchiveItems);
+      return false;
+    }
+    const sample = candidates
+      .slice(0, 12)
+      .map((item, index) => `${index + 1}. ${item.title}`)
+      .join("\n");
+    const more = candidates.length > 12 ? `\n... +${candidates.length - 12}` : "";
+    return window.confirm(`${t.archiveConfirm}\n\n${sample}${more}`);
   }
 
   function playerText(settings: AppSettings, category: LibraryCategory): string {
@@ -906,10 +1480,6 @@ function App(): JSX.Element {
               <input type="checkbox" checked={compressFolders} onChange={(event) => setCompressFolders(event.target.checked)} />
               <span>{t.compressComicFolders}</span>
             </label>
-            <button className="admin-button" onClick={() => void window.comicShelf.relaunchAsAdmin()} disabled={busy}>
-              <Shield size={16} />
-              <span>{t.relaunchAdmin}</span>
-            </button>
             <button className="organize-button" onClick={() => void organizeComics()} disabled={busy}>
               <FolderOpen size={16} />
               <span>{t.organizeImported}</span>
@@ -918,6 +1488,13 @@ function App(): JSX.Element {
               <FolderPlus size={16} />
               <span>{t.autoOrganize}</span>
             </button>
+            <button className="organize-button secondary" onClick={() => void chooseArchiveDirectory()} disabled={busy}>
+              <FolderOpen size={16} />
+              <span>{t.chooseArchiveFolder}</span>
+            </button>
+            <p className="cache-hint" title={snapshot.settings.archiveDirectory ?? ""}>
+              {t.archiveFolder}: {snapshot.settings.archiveDirectory ?? "Default"}
+            </p>
             <button className="danger-button" onClick={() => void clearLibrary()} disabled={busy}>
               <Trash2 size={16} />
               <span>{t.clearLibrary}</span>
@@ -927,6 +1504,10 @@ function App(): JSX.Element {
             <button className="admin-button" onClick={() => void toggleHighPerformance()} disabled={busy}>
               <Shield size={16} />
               <span>{snapshot.settings.highPerformanceMode ? t.disableHighPerformance : t.enableHighPerformance}</span>
+            </button>
+            <button className="organize-button secondary" onClick={() => void preloadAllContent()} disabled={busy}>
+              <Settings size={16} />
+              <span>{t.preloadAll}</span>
             </button>
             <button className="organize-button secondary" onClick={() => void toggleCoverCache()} disabled={busy}>
               <Settings size={16} />
@@ -948,14 +1529,25 @@ function App(): JSX.Element {
           </section>
 
           <section className="utility-panel">
-            <button onClick={() => void setLanguage(lang === "zh" ? "en" : "zh")}>{t.language}</button>
+            <label className="language-setting">
+              <span>{t.languageSetting}</span>
+              <select value={lang} onChange={(event) => void setLanguage(event.target.value as AppLanguage)}>
+                <option value="zh">中文</option>
+                <option value="en">English</option>
+                <option value="ja">日本語</option>
+              </select>
+            </label>
             <button onClick={() => setViewMode("help")}>
               <HelpCircle size={16} />
               <span>{t.help}</span>
             </button>
-            <button onClick={() => void window.comicShelf.openGithub()}>
+            <button onClick={showGithubInfo}>
               <Github size={16} />
               <span>{t.github}</span>
+            </button>
+            <button onClick={() => void window.comicShelf.quitApp()}>
+              <X size={16} />
+              <span>{t.quitApp}</span>
             </button>
           </section>
 
@@ -964,7 +1556,7 @@ function App(): JSX.Element {
       )}
 
       {viewMode === "grid" && (
-        <section className={`library-view display-${displayMode}`}>
+        <section className={`library-view display-${displayMode} ${editorMode ? "has-editor-bar" : ""}`}>
           <header className="topbar">
             <div>
               <h2>{filter === "favorite" ? t.favorite : filter === "all" ? t.library : t.categories[filter]}</h2>
@@ -974,6 +1566,13 @@ function App(): JSX.Element {
               </p>
             </div>
             <div className="topbar-controls">
+              <label>
+                <span>{t.editorMode}</span>
+                <select value={editorMode ? "on" : "off"} onChange={(event) => (event.target.value === "on" ? setEditorMode(true) : toggleEditorMode())}>
+                  <option value="off">{t.editorOff}</option>
+                  <option value="on">{t.editorOn}</option>
+                </select>
+              </label>
               {displayMode === "paged" && (
                 <>
                   <button disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
@@ -1039,6 +1638,35 @@ function App(): JSX.Element {
             </div>
           </header>
 
+          {editorMode && (
+            <div className="editor-action-bar">
+              <div>
+                <Edit3 size={16} />
+                <span>
+                  {t.editorMode} - {t.selectedCount} {selectedIds.length}
+                </span>
+              </div>
+              <button onClick={selectVisibleItems}>
+                <CheckSquare size={15} />
+                <span>{t.selectAll}</span>
+              </button>
+              <button onClick={() => setSelectedIds([])} disabled={selectedIds.length === 0}>
+                <Square size={15} />
+                <span>{t.clearSelection}</span>
+              </button>
+              <button onClick={() => void renameSelectedItem()} disabled={selectedIds.length !== 1 || busy}>
+                {t.renameSelected}
+              </button>
+              <button onClick={() => void createComicFromSelectedImages()} disabled={selectedIds.length === 0 || busy}>
+                {t.createComicFromImages}
+              </button>
+              <button className="danger-inline" onClick={() => void deleteSelectedFiles()} disabled={selectedIds.length === 0 || busy}>
+                <Trash2 size={15} />
+                <span>{t.deleteSelectedFiles}</span>
+              </button>
+            </div>
+          )}
+
           {filteredItems.length === 0 ? (
             <div className="empty-state">
               <BookOpen size={42} />
@@ -1047,9 +1675,17 @@ function App(): JSX.Element {
             </div>
           ) : (
             <div ref={gridRef} className="book-grid" style={{ ["--grid-columns" as string]: String(gridColumns), ["--grid-rows" as string]: String(rowsPerPage) }}>
-              {visibleItems.map((item) => (
-                <article className={`book-card category-${item.category}`} key={item.id}>
-                  <button className="cover-button" onClick={() => void openItem(item)}>
+              {visibleItems.map((item) => {
+                const isSelected = selectedIds.includes(item.id);
+                const previewName = currentReadableImage(item) ? fileName(currentReadableImage(item)!) : null;
+                return (
+                <article className={`book-card category-${item.category} ${isSelected ? "selected" : ""}`} key={item.id}>
+                  {editorMode && (
+                    <button className="select-toggle" title={isSelected ? t.clearSelection : t.selectAll} onClick={() => toggleSelected(item.id)}>
+                      {isSelected ? <CheckSquare size={20} /> : <Square size={20} />}
+                    </button>
+                  )}
+                  <button className="cover-button" onClick={() => (editorMode ? toggleSelected(item.id) : void openItem(item))}>
                     {item.coverPath ? (
                       <img src={window.comicShelf.assetUrl(item.coverPath)} alt={item.title} loading="lazy" />
                     ) : item.category === "video" || item.category === "series" ? (
@@ -1067,6 +1703,11 @@ function App(): JSX.Element {
                       <span>{item.category === "comic" || item.category === "image" ? pageLabel(item.currentPage, item.pageCount) : t.internalViewer}</span>
                     </div>
                     <h3 title={item.title}>{item.title}</h3>
+                    {(item.category === "comic" || item.category === "image") && previewName && (
+                      <p className="page-file-name" title={previewName}>
+                        {t.pageFileName}: {previewName}
+                      </p>
+                    )}
                     {item.previewText && <p className="text-preview">{item.previewText}</p>}
                     {item.tags.length > 0 && (
                       <div className="tag-list">
@@ -1099,7 +1740,8 @@ function App(): JSX.Element {
                     </button>
                   </div>
                 </article>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>
@@ -1114,8 +1756,10 @@ function App(): JSX.Element {
             </div>
           </header>
           <div className="help-content">
-            <p>{t.helpText}</p>
-            <button onClick={() => void window.comicShelf.openGithub()}>
+            {helpParagraphs(lang).map((paragraph) => (
+              <p key={paragraph}>{paragraph}</p>
+            ))}
+            <button onClick={showGithubInfo}>
               <Github size={17} />
               <span>{t.github}</span>
             </button>
@@ -1210,6 +1854,9 @@ function App(): JSX.Element {
                 <button title={t.resetZoom} onClick={() => setZoom(100)}>
                   <RotateCcw size={18} />
                 </button>
+                <button title={t.pinReference} onClick={() => addReferenceImage(selectedItem)}>
+                  <FileImage size={18} />
+                </button>
                 <select value={fitMode} onChange={(event) => setFitMode(event.target.value as FitMode)}>
                   <option value="page">{t.fitPage}</option>
                   <option value="width">{t.fitWidth}</option>
@@ -1238,6 +1885,59 @@ function App(): JSX.Element {
           </div>
         </section>
       )}
+
+      {referenceImages.map((image) => (
+        <div
+          className="reference-float"
+          key={image.id}
+          style={{ left: image.x, top: image.y, width: image.width }}
+          onPointerDown={(event) => startReferenceDrag(event, image)}
+        >
+          <header>
+            <span title={image.title}>{t.referenceImage}: {image.title}</span>
+            <button title={t.closeReference} onClick={() => closeReferenceImage(image.id)}>
+              <X size={15} />
+            </button>
+          </header>
+          <img
+            src={window.comicShelf.assetUrl(image.path)}
+            alt={image.title}
+            style={{ width: image.width, height: image.keepRatio ? "auto" : image.height }}
+            draggable={false}
+          />
+          <div className="reference-controls">
+            <label>
+              <span>{t.referenceWidth}</span>
+              <input
+                type="range"
+                min={120}
+                max={720}
+                value={image.width}
+                onChange={(event) => {
+                  const width = Number(event.target.value);
+                  const ratio = image.height / Math.max(1, image.width);
+                  updateReferenceImage(image.id, { width, height: image.keepRatio ? Math.round(width * ratio) : image.height });
+                }}
+              />
+            </label>
+            {!image.keepRatio && (
+              <label>
+                <span>{t.referenceHeight}</span>
+                <input
+                  type="range"
+                  min={90}
+                  max={900}
+                  value={image.height}
+                  onChange={(event) => updateReferenceImage(image.id, { height: Number(event.target.value) })}
+                />
+              </label>
+            )}
+            <button onClick={() => updateReferenceImage(image.id, { keepRatio: !image.keepRatio })}>
+              {image.keepRatio ? t.keepRatio : t.freeRatio}
+            </button>
+          </div>
+        </div>
+      ))}
 
       {importProgress && (
         <div className="import-overlay" role="status" aria-live="polite">
@@ -1272,6 +1972,29 @@ function App(): JSX.Element {
               <button onClick={() => setTagEditorItem(null)}>{t.cancel}</button>
               <button className="primary" onClick={() => void saveTags()}>
                 {t.save}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showGithubCard && (
+        <div className="modal-overlay" role="dialog" aria-modal="true">
+          <div className="github-card">
+            <img src={taoImage} alt="TAO" />
+            <h2>{t.author}: TAO</h2>
+            <p>https://github.com/haoy633-star/Offline-text-repository-</p>
+            <p>{t.githubPrompt}</p>
+            <div className="modal-actions">
+              <button onClick={() => setShowGithubCard(false)}>{t.cancel}</button>
+              <button
+                className="primary"
+                onClick={() => {
+                  setShowGithubCard(false);
+                  void window.comicShelf.openGithub();
+                }}
+              >
+                {t.github}
               </button>
             </div>
           </div>

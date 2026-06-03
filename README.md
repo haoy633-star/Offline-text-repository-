@@ -55,19 +55,19 @@ When a selected folder mostly contains images, it becomes one comic item. If a c
 
 ### Quick Download / 快速下载
 
-For beginners, download the portable executable directly from the repository:
+For beginners, use the Windows installer:
 
-小白用户可以直接下载仓库里的便携版 exe：
+小白用户建议使用 Windows 安装版：
 
-- `downloads/Offline-Library-Portable.exe`
+- `downloads/Offline-Library-1.0.0-x64-Setup.exe`
 
-After downloading, double-click the file to run the app.
+After downloading, double-click the installer and follow the setup wizard.
 
-下载后双击即可运行。
+下载后双击安装包，按安装向导操作即可。
 
-The installer uses a guided setup. It lets you choose the install location and whether to create shortcuts, instead of installing immediately after you open it.
+The installer uses a guided setup. It lets you choose the install location and whether to create shortcuts. New installer builds use the same app id and installer guid, so installing a newer version upgrades/replaces the older installed version instead of creating a separate app entry. If an older installation is detected, the installer shows an upgrade notice and closes the running old app before continuing.
 
-安装版使用向导模式。打开安装包后可以选择安装位置，也可以选择是否创建快捷方式，不会再一点开就直接自动安装。
+安装版使用向导模式。打开安装包后可以选择安装位置，也可以选择是否创建快捷方式。新版安装包使用固定应用标识和安装器标识，会升级/替换旧安装版，而不是创建一个重复软件。
 
 ### Option 1: Download Source Code / 下载源码
 
@@ -97,14 +97,13 @@ npm install
 npm run dist
 ```
 
-The installer and portable executable will be generated in the `release` folder.
+The installer will be generated in the `release` folder.
 
-安装包和便携版 exe 会生成在 `release` 文件夹中。
+安装包会生成在 `release` 文件夹中。
 
 Current local build output / 当前本机打包输出：
 
-- `release/Offline Library-0.1.0-x64-Setup.exe`: installer / 安装版
-- `release/Offline Library-0.1.0-x64-Portable.exe`: portable app / 便携版，双击即可启动
+- `downloads/Offline-Library-1.0.0-x64-Setup.exe`: installer / 安装版
 - `release/win-unpacked/Offline Library.exe`: unpacked app executable / 解压目录里的直接启动程序
 
 ## Development / 开发运行
@@ -188,14 +187,16 @@ These tools may move files. Read the confirmation dialog carefully before contin
 
 这些工具可能会移动文件。继续前请仔细阅读确认窗口。
 
-- `整理已导入资源`: choose a destination folder, then move all imported resources into category subfolders. This changes the original file locations.
+- `压缩/归档已导入资源`: choose a destination folder, then move imported resources into category subfolders. If compression is enabled, folder comics are converted to CBZ. This changes the original file locations.
 - `归档并分类已导入资源`: choose the final archive/classification destination yourself. It moves imported resources into `Comics`, `Images`, `Text`, `Audio`, `Video`, `Series`, `Archives`, and `Other`.
+- `选择归档目录`: point the app at an existing archived library folder. The app will scan that folder automatically on startup/refresh.
 - `文件夹漫画压缩为 CBZ`: when enabled, folder-based comics are compressed to `.cbz`; after successful compression, the original comic folder is removed.
 - Cover cache / 封面缓存：off by default. When enabled, the app caches optimized WebP cover previews only, not full books. You can choose the cache folder, disable it, and clear it later.
 - High performance mode / 高性能模式：recommended when importing thousands of files. It uses more memory, enables cover caching, and renders the shelf in pages instead of drawing every item at once.
 
-- `整理已导入资源`：选择目标文件夹后，把当前库里的资源移动到分类子文件夹。原文件位置会改变。
+- `压缩/归档已导入资源`：选择目标文件夹后，把当前库里的资源移动到分类子文件夹；如果开启压缩，会把文件夹漫画转成 CBZ。原文件位置会改变。
 - `归档并分类已导入资源`：面向整个库的大整理操作，你可以自己选择最终归档分类位置；它会移动已导入资源到 `Comics`、`Images`、`Text`、`Audio`、`Video`、`Series`、`Archives`、`Other`。
+- `选择归档目录`：指定一个已经归档好的资料库目录。应用会在启动/刷新时自动扫描这个目录。
 - `文件夹漫画压缩为 CBZ`：开启后，文件夹漫画会被压缩成 `.cbz`；压缩成功后原漫画文件夹会被删除。
 - 封面缓存：默认关闭。开启后只缓存优化后的 WebP 封面预览，不缓存整本漫画；可以自定义缓存目录，也可随时关闭并清除。
 - 高性能模式：如果导入了几千到上万文件，建议开启。它会占用更多内存、启用封面缓存，并把书架分页渲染，避免一次性显示所有卡片导致卡顿。

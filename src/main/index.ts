@@ -1,11 +1,11 @@
-import { app, BrowserWindow, Menu, dialog, ipcMain, nativeImage, net, protocol, shell } from "electron";
+import { app, BrowserWindow, Menu, Tray, dialog, ipcMain, nativeImage, protocol, shell } from "electron";
 import { electronApp, optimizer } from "@electron-toolkit/utils";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
+import { createReadStream, existsSync, statSync } from "node:fs";
 import { copyFile, cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, parse, relative, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { Readable } from "node:stream";
 import JSZip from "jszip";
 import sharp from "sharp";
 import type {
@@ -39,7 +39,9 @@ const categoryFolders: Record<LibraryCategory, string> = {
 };
 
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
 let activeImportStartedAt = 0;
+let isQuitting = false;
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -99,6 +101,69 @@ function categoryForExtension(filePath: string): LibraryCategory {
   if (videoExtensions.has(extension)) return "video";
   if (archiveExtensions.has(extension)) return "archive";
   return "other";
+}
+
+function mimeTypeForFile(filePath: string): string {
+  const extension = extname(filePath).toLowerCase();
+  const types: Record<string, string> = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+    ".bmp": "image/bmp",
+    ".avif": "image/avif",
+    ".mp4": "video/mp4",
+    ".m4v": "video/mp4",
+    ".webm": "video/webm",
+    ".mov": "video/quicktime",
+    ".mkv": "video/x-matroska",
+    ".avi": "video/x-msvideo",
+    ".wmv": "video/x-ms-wmv",
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".flac": "audio/flac",
+    ".ogg": "audio/ogg",
+    ".m4a": "audio/mp4",
+    ".txt": "text/plain; charset=utf-8",
+    ".md": "text/markdown; charset=utf-8"
+  };
+  return types[extension] ?? "application/octet-stream";
+}
+
+function fileResponse(filePath: string, request: Request): Response {
+  const fileStat = statSync(filePath);
+  const fileSize = fileStat.size;
+  const range = request.headers.get("range");
+  const contentType = mimeTypeForFile(filePath);
+
+  if (range) {
+    const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+    if (match) {
+      const requestedStart = match[1] ? Number(match[1]) : 0;
+      const requestedEnd = match[2] ? Number(match[2]) : fileSize - 1;
+      const start = Math.max(0, Math.min(requestedStart, fileSize - 1));
+      const end = Math.max(start, Math.min(requestedEnd, fileSize - 1));
+      const chunkSize = end - start + 1;
+      return new Response(Readable.toWeb(createReadStream(filePath, { start, end })) as ReadableStream, {
+        status: 206,
+        headers: {
+          "Accept-Ranges": "bytes",
+          "Content-Length": String(chunkSize),
+          "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+          "Content-Type": contentType
+        }
+      });
+    }
+  }
+
+  return new Response(Readable.toWeb(createReadStream(filePath)) as ReadableStream, {
+    headers: {
+      "Accept-Ranges": "bytes",
+      "Content-Length": String(fileSize),
+      "Content-Type": contentType
+    }
+  });
 }
 
 function isImage(filePath: string): boolean {
@@ -237,10 +302,21 @@ async function readSettings(): Promise<AppSettings> {
       language: data.language ?? "zh",
       coverCacheEnabled: data.coverCacheEnabled ?? false,
       coverCacheDirectory: data.coverCacheDirectory ?? null,
+      archiveDirectory: data.archiveDirectory ?? null,
+      scannedArchiveDirectories: data.scannedArchiveDirectories ?? [],
       highPerformanceMode: data.highPerformanceMode ?? false
     };
   } catch {
-    return { players: {}, detectedPlayers: await detectPlayers(), language: "zh", coverCacheEnabled: false, coverCacheDirectory: null, highPerformanceMode: false };
+    return {
+      players: {},
+      detectedPlayers: await detectPlayers(),
+      language: "zh",
+      coverCacheEnabled: false,
+      coverCacheDirectory: null,
+      archiveDirectory: null,
+      scannedArchiveDirectories: [],
+      highPerformanceMode: false
+    };
   }
 }
 
@@ -265,6 +341,7 @@ function migrateItem(raw: Partial<Omit<LibraryItem, "sourceType">> & { sourceTyp
     sourcePath: raw.sourcePath,
     category,
     coverPath: raw.coverPath ?? null,
+    videoCoverPath: raw.videoCoverPath ?? null,
     pagePaths,
     pageCount: raw.pageCount ?? pagePaths.length,
     files: raw.files ?? pagePaths.map(toLibraryFile),
@@ -366,6 +443,7 @@ async function createComicFolderItem(folderPath: string, existing: LibraryItem |
     sourcePath: absolutePath,
     category: "comic",
     coverPath,
+    videoCoverPath: null,
     pagePaths,
     pageCount: pagePaths.length,
     files: pagePaths.map(toLibraryFile),
@@ -396,6 +474,7 @@ function createComicItemFromPages(folderPath: string, pagePaths: string[], exist
     sourcePath: absolutePath,
     category: "comic",
     coverPath,
+    videoCoverPath: null,
     pagePaths: sortedPages,
     pageCount: sortedPages.length,
     files: sortedPages.map(toLibraryFile),
@@ -423,6 +502,7 @@ async function createFileItem(filePath: string, existing: LibraryItem | undefine
     sourcePath: absolutePath,
     category: file.category,
     coverPath,
+    videoCoverPath: existing?.videoCoverPath ?? null,
     pagePaths: file.category === "image" ? [absolutePath] : [],
     pageCount: file.category === "image" ? 1 : 0,
     files: [file],
@@ -451,6 +531,7 @@ async function createSeriesFolderItem(folderPath: string, existing: LibraryItem 
     sourcePath: absolutePath,
     category: "series",
     coverPath: null,
+    videoCoverPath: existing?.videoCoverPath ?? null,
     pagePaths: [],
     pageCount: 0,
     files: files.map(toLibraryFile),
@@ -499,6 +580,7 @@ async function createArchiveItem(archivePath: string, existing: LibraryItem | un
     sourcePath: absolutePath,
     category: "comic",
     coverPath,
+    videoCoverPath: null,
     pagePaths,
     pageCount: pagePaths.length,
     files: pagePaths.map(toLibraryFile),
@@ -531,7 +613,11 @@ async function createItemsFromFolder(rootPath: string, existingItems: LibraryIte
         result.push(await createComicFolderItem(entryPath, currentById.get(hash(`folder:${resolve(entryPath)}`))));
       } else {
         for (const filePath of files) {
-          result.push(await createFileItem(filePath, currentById.get(hash(`file:${resolve(filePath)}`))));
+          if (isArchive(filePath)) {
+            result.push(await createArchiveItem(filePath, existingItems.find((item) => item.sourcePath === resolve(filePath))));
+          } else {
+            result.push(await createFileItem(filePath, currentById.get(hash(`file:${resolve(filePath)}`))));
+          }
         }
       }
     } else if (entry.isFile()) {
@@ -553,6 +639,59 @@ async function createItemsFromFolder(rootPath: string, existingItems: LibraryIte
   }
 
   return result;
+}
+
+async function createItemsFromArchiveDirectory(rootPath: string, existingItems: LibraryItem[]): Promise<Array<LibraryItem | null>> {
+  const absoluteRoot = resolve(rootPath);
+  const currentById = new Map(existingItems.map((item) => [item.id, item]));
+  const result: Array<LibraryItem | null> = [];
+
+  for (const category of categoryKeysForArchive()) {
+    const categoryPath = join(absoluteRoot, categoryFolders[category]);
+    if (!existsSync(categoryPath)) continue;
+
+    if (category === "comic") {
+      result.push(...(await createItemsFromFolder(categoryPath, existingItems)));
+      continue;
+    }
+
+    const files = await findFilesInFolder(categoryPath);
+    if (category === "series") {
+      const entries = await readdir(categoryPath, { withFileTypes: true });
+      for (const entry of entries) {
+        const entryPath = join(categoryPath, entry.name);
+        if (entry.isDirectory()) {
+          result.push(await createSeriesFolderItem(entryPath, currentById.get(hash(`series:${resolve(entryPath)}`))));
+        } else if (entry.isFile()) {
+          result.push(await createFileItem(entryPath, currentById.get(hash(`file:${resolve(entryPath)}`))));
+        }
+      }
+      continue;
+    }
+
+    for (const filePath of files) {
+      if (isArchive(filePath)) {
+        result.push(await createArchiveItem(filePath, existingItems.find((item) => item.sourcePath === resolve(filePath))));
+      } else {
+        result.push(await createFileItem(filePath, currentById.get(hash(`file:${resolve(filePath)}`))));
+      }
+    }
+  }
+
+  return result;
+}
+
+function categoryKeysForArchive(): LibraryCategory[] {
+  return ["comic", "image", "text", "audio", "video", "series", "archive", "other"];
+}
+
+async function directoryHasEntries(folderPath: string): Promise<boolean> {
+  try {
+    const entries = await readdir(folderPath);
+    return entries.length > 0;
+  } catch {
+    return false;
+  }
 }
 
 async function mergeImports(imports: Array<LibraryItem | null>): Promise<ImportResult> {
@@ -581,6 +720,40 @@ async function mergeImports(imports: Array<LibraryItem | null>): Promise<ImportR
   return { added, updated, skipped, items: (await snapshot(items)).items };
 }
 
+async function syncArchiveDirectory(): Promise<LibraryItem[]> {
+  const settings = await readSettings();
+  if (!settings.archiveDirectory || !existsSync(settings.archiveDirectory)) {
+    return readLibrary();
+  }
+
+  const archivePath = resolve(settings.archiveDirectory);
+  if (settings.scannedArchiveDirectories.map((entry) => resolve(entry)).includes(archivePath)) {
+    return readLibrary();
+  }
+
+  if (!(await directoryHasEntries(archivePath))) {
+    return readLibrary();
+  }
+
+  const current = await readLibrary();
+  activeImportStartedAt = Date.now();
+  emitImportProgress({ phase: "scanning", current: 0, total: 1, message: `Scanning archive folder ${basename(archivePath)}` });
+  const imports = await createItemsFromArchiveDirectory(archivePath, current);
+  emitImportProgress({ phase: "saving", current: 1, total: 1, message: "Saving archive library" });
+  const byId = new Map(current.map((item) => [item.id, item]));
+  for (const item of imports) {
+    if (item) {
+      byId.set(item.id, item);
+    }
+  }
+  const items = [...byId.values()];
+  await writeLibrary(items);
+  settings.scannedArchiveDirectories = [...new Set([...settings.scannedArchiveDirectories.map((entry) => resolve(entry)), archivePath])];
+  await writeSettings(settings);
+  emitImportProgress({ phase: "done", current: 1, total: 1, message: "Done" });
+  return items;
+}
+
 async function openWithPlayer(item: LibraryItem): Promise<void> {
   const settings = await readSettings();
   const targetPath = item.sourceType === "archive" && item.category === "comic" ? item.sourcePath : item.sourcePath;
@@ -606,6 +779,18 @@ function sanitizeName(value: string): string {
   return value.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").trim() || "Untitled";
 }
 
+function renameTargetPath(item: LibraryItem, title: string): string {
+  const cleanTitle = sanitizeName(title);
+  if (item.sourceType === "folder") {
+    return join(dirname(item.sourcePath), cleanTitle);
+  }
+
+  const originalExtension = extname(item.sourcePath);
+  const requestedExtension = extname(cleanTitle);
+  const fileName = requestedExtension ? cleanTitle : `${cleanTitle}${originalExtension}`;
+  return join(dirname(item.sourcePath), fileName);
+}
+
 async function uniquePath(folderPath: string, name: string): Promise<string> {
   const parsed = parse(name);
   let candidate = join(folderPath, name);
@@ -615,6 +800,10 @@ async function uniquePath(folderPath: string, name: string): Promise<string> {
     index += 1;
   }
   return candidate;
+}
+
+async function uniqueTargetPath(targetPath: string): Promise<string> {
+  return uniquePath(dirname(targetPath), basename(targetPath));
 }
 
 function isInsidePath(parentPath: string, childPath: string): boolean {
@@ -647,6 +836,76 @@ async function movePath(sourcePath: string, destinationPath: string, recursive: 
   }
 }
 
+async function renameLibraryItem(itemId: string, title: string): Promise<LibrarySnapshot> {
+  const items = await readLibrary();
+  const item = items.find((entry) => entry.id === itemId);
+  if (!item || !existsSync(item.sourcePath)) {
+    return snapshot(items);
+  }
+
+  const targetPath = await uniqueTargetPath(renameTargetPath(item, title));
+  const sourceInfo = await stat(item.sourcePath);
+  await movePath(item.sourcePath, targetPath, sourceInfo.isDirectory());
+  const renamed = {
+    ...updateMovedItemPaths(item, targetPath),
+    title: titleFromPath(targetPath),
+    updatedAt: now()
+  };
+  const nextItems = items.map((entry) => (entry.id === item.id ? renamed : entry));
+  await writeLibrary(nextItems);
+  return snapshot(nextItems);
+}
+
+async function deleteLibraryItems(itemIds: string[]): Promise<LibrarySnapshot> {
+  const ids = new Set(itemIds);
+  const items = await readLibrary();
+  const nextItems: LibraryItem[] = [];
+
+  for (const item of items) {
+    if (!ids.has(item.id)) {
+      nextItems.push(item);
+      continue;
+    }
+
+    if (existsSync(item.sourcePath)) {
+      const sourceInfo = await stat(item.sourcePath);
+      await rm(item.sourcePath, { recursive: sourceInfo.isDirectory(), force: true });
+    }
+    if (item.sourceType === "archive" && item.category === "comic") {
+      await rm(join(importCachePath(), item.id), { recursive: true, force: true });
+    }
+  }
+
+  await writeLibrary(nextItems);
+  return snapshot(nextItems);
+}
+
+async function createComicFromImages(itemIds: string[], title: string): Promise<LibrarySnapshot> {
+  const ids = new Set(itemIds);
+  const items = await readLibrary();
+  const imageItems = items.filter((item) => ids.has(item.id) && item.category === "image" && item.sourceType === "file" && existsSync(item.sourcePath));
+  if (imageItems.length === 0) {
+    return snapshot(items);
+  }
+
+  const settings = await readSettings();
+  const destinationParent = settings.archiveDirectory ? join(resolve(settings.archiveDirectory), categoryFolders.comic) : dirname(imageItems[0].sourcePath);
+  const comicFolder = await uniquePath(destinationParent, sanitizeName(title));
+  await mkdir(comicFolder, { recursive: true });
+
+  for (const item of imageItems) {
+    const destinationPath = await uniquePath(comicFolder, basename(item.sourcePath));
+    await movePath(item.sourcePath, destinationPath, false);
+  }
+
+  const movedImageIds = new Set(imageItems.map((item) => item.id));
+  const existingWithoutImages = items.filter((item) => !movedImageIds.has(item.id));
+  const comic = await createComicFolderItem(comicFolder, undefined);
+  const nextItems = comic ? [...existingWithoutImages, comic] : existingWithoutImages;
+  await writeLibrary(nextItems);
+  return snapshot(nextItems);
+}
+
 async function zipFolderToCbz(folderPath: string, outputPath: string): Promise<void> {
   const zip = new JSZip();
   const files = await findFilesInFolder(folderPath);
@@ -661,25 +920,34 @@ async function zipFolderToCbz(folderPath: string, outputPath: string): Promise<v
 }
 
 async function organizeComics(compressFolders: boolean): Promise<OrganizeResult> {
-  const selection = await dialog.showOpenDialog(mainWindow!, {
-    title: "Choose imported resource organization folder",
-    properties: ["openDirectory", "createDirectory"]
-  });
-
   const current = await readLibrary();
-  if (selection.canceled || !selection.filePaths[0]) {
-    return { moved: 0, compressed: 0, skipped: 0, destinationPath: null, items: (await snapshot(current)).items };
+  const settings = await readSettings();
+  if (!settings.archiveDirectory) {
+    const selection = await dialog.showOpenDialog(mainWindow!, {
+      title: "Choose archive folder for imported resources",
+      properties: ["openDirectory", "createDirectory"]
+    });
+    if (selection.canceled || !selection.filePaths[0]) {
+      return { moved: 0, compressed: 0, skipped: 0, destinationPath: null, items: (await snapshot(current)).items };
+    }
+    settings.archiveDirectory = resolve(selection.filePaths[0]);
   }
 
-  const destinationRoot = resolve(selection.filePaths[0]);
+  const destinationRoot = resolve(settings.archiveDirectory);
   await mkdir(destinationRoot, { recursive: true });
+  settings.archiveDirectory = destinationRoot;
+  await writeSettings(settings);
 
   let moved = 0;
   let compressed = 0;
   let skipped = 0;
   const nextItems: LibraryItem[] = [];
+  activeImportStartedAt = Date.now();
+  emitImportProgress({ phase: "scanning", current: 0, total: current.length, message: "Preparing archive/compression" });
 
-  for (const item of current) {
+  for (let index = 0; index < current.length; index += 1) {
+    const item = current[index];
+    emitImportProgress({ phase: "importing", current: index, total: current.length, message: `Processing ${item.title}` });
     if (!existsSync(item.sourcePath)) {
       nextItems.push(item);
       skipped += 1;
@@ -723,7 +991,9 @@ async function organizeComics(compressFolders: boolean): Promise<OrganizeResult>
     }
   }
 
+  emitImportProgress({ phase: "saving", current: current.length, total: current.length, message: "Saving archive result" });
   await writeLibrary(nextItems);
+  emitImportProgress({ phase: "done", current: current.length, total: current.length, message: "Done" });
   return { moved, compressed, skipped, destinationPath: destinationRoot, items: (await snapshot(nextItems)).items };
 }
 
@@ -763,26 +1033,36 @@ async function categoryForOrganizing(filePath: string): Promise<LibraryCategory>
 }
 
 async function autoOrganizeFolder(): Promise<AutoOrganizeResult> {
-  const destinationSelection = await dialog.showOpenDialog(mainWindow!, {
-    title: "Choose destination folder for imported library",
-    properties: ["openDirectory", "createDirectory"]
-  });
-  if (destinationSelection.canceled || !destinationSelection.filePaths[0]) {
-    return emptyAutoOrganizeResult(null, null);
+  const settings = await readSettings();
+  if (!settings.archiveDirectory) {
+    const destinationSelection = await dialog.showOpenDialog(mainWindow!, {
+      title: "Choose destination folder for imported library",
+      properties: ["openDirectory", "createDirectory"]
+    });
+    if (destinationSelection.canceled || !destinationSelection.filePaths[0]) {
+      return emptyAutoOrganizeResult(null, null);
+    }
+    settings.archiveDirectory = resolve(destinationSelection.filePaths[0]);
   }
 
-  const destinationRoot = resolve(destinationSelection.filePaths[0]);
+  const destinationRoot = resolve(settings.archiveDirectory);
+  settings.archiveDirectory = destinationRoot;
+  await writeSettings(settings);
   const counts: Record<LibraryCategory, number> = { comic: 0, image: 0, text: 0, audio: 0, video: 0, series: 0, archive: 0, other: 0 };
   let moved = 0;
   let skipped = 0;
   const current = await readLibrary();
   const nextItems: LibraryItem[] = [];
+  activeImportStartedAt = Date.now();
+  emitImportProgress({ phase: "scanning", current: 0, total: current.length, message: "Preparing archive classification" });
 
   for (const folderName of Object.values(categoryFolders)) {
     await mkdir(join(destinationRoot, folderName), { recursive: true });
   }
 
-  for (const item of current) {
+  for (let index = 0; index < current.length; index += 1) {
+    const item = current[index];
+    emitImportProgress({ phase: "importing", current: index, total: current.length, message: `Classifying ${item.title}` });
     try {
       if (!existsSync(item.sourcePath)) {
         skipped += 1;
@@ -806,7 +1086,9 @@ async function autoOrganizeFolder(): Promise<AutoOrganizeResult> {
     }
   }
 
+  emitImportProgress({ phase: "saving", current: current.length, total: current.length, message: "Saving archive classification" });
   await writeLibrary(nextItems);
+  emitImportProgress({ phase: "done", current: current.length, total: current.length, message: "Done" });
   return { moved, skipped, sourcePath: null, destinationPath: destinationRoot, categories: counts, items: (await snapshot(nextItems)).items };
 }
 
@@ -829,7 +1111,39 @@ function relaunchAsAdmin(): void {
     ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", `Start-Process -FilePath '${exePath.replace(/'/g, "''")}' ${args} -Verb RunAs`],
     { detached: true, stdio: "ignore" }
   ).unref();
+  isQuitting = true;
   app.quit();
+}
+
+function showMainWindow(): void {
+  if (!mainWindow) return;
+  mainWindow.show();
+  mainWindow.restore();
+  mainWindow.focus();
+}
+
+function quitApp(): void {
+  isQuitting = true;
+  app.quit();
+}
+
+function createTray(): void {
+  if (tray) return;
+  const icon = nativeImage.createFromBuffer(
+    Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAAAsTAAALEwEAmpwYAAAA/ElEQVR4nO1XS6oCMRDsGwjieBEXdoOnEN+B/OyUbj3YU3evWzyEjq5V4owyMk9QGBOVNNQyqUoqny6AQq3H1FSmkTIuTGhvQseKsFfBuTIOHQf8VzqlHxNMKyS9A0z/mHolcmU6vJ48g+O6iliPqeln5SUR29Wsk4Dz3Dd5wY4BqOAylAB3MMEYdwF3IIVw5Bng7QUk9doNHpn0mTEQBVi0QOIhpHgNjx/1ECV3EAXY11pgob9je70A9N4RFztjyFNQuKZUGYfBLGDqhwsmQhudtBrndORiku9oZtLu3uTDXMTWx8pL5JdyWc3FJRX6rTSwMO6yOal/3fa8TrqKbXSpNt29AAAAAElFTkSuQmCC",
+      "base64"
+    )
+  );
+  tray = new Tray(icon);
+  tray.setToolTip("Offline Library");
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: "打开 Offline Library", click: showMainWindow },
+      { label: "退出", click: quitApp }
+    ])
+  );
+  tray.on("double-click", showMainWindow);
 }
 
 function createWindow(): void {
@@ -848,6 +1162,11 @@ function createWindow(): void {
   });
 
   mainWindow.on("ready-to-show", () => mainWindow?.show());
+  mainWindow.on("close", (event) => {
+    if (isQuitting) return;
+    event.preventDefault();
+    mainWindow?.hide();
+  });
 
   if (process.env.ELECTRON_RENDERER_URL) {
     void mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
@@ -866,7 +1185,7 @@ app.whenReady().then(() => {
     if (!filePath || !existsSync(filePath)) {
       return new Response("File not found", { status: 404 });
     }
-    return net.fetch(pathToFileURL(filePath).toString());
+    return fileResponse(filePath, request);
   });
 
   app.on("browser-window-created", (_, window) => optimizer.watchWindowShortcuts(window));
@@ -974,6 +1293,35 @@ app.whenReady().then(() => {
     return snapshot(items);
   });
 
+  ipcMain.handle("library:rename", async (_, itemId: string, title: string) => {
+    return renameLibraryItem(itemId, title);
+  });
+
+  ipcMain.handle("library:delete-items", async (_, itemIds: string[]) => {
+    return deleteLibraryItems(itemIds);
+  });
+
+  ipcMain.handle("library:create-comic-from-images", async (_, itemIds: string[], title: string) => {
+    return createComicFromImages(itemIds, title);
+  });
+
+  ipcMain.handle("library:save-video-cover", async (_, itemId: string, dataUrl: string) => {
+    const match = /^data:image\/(?:jpeg|png|webp);base64,(.+)$/.exec(dataUrl);
+    const items = await readLibrary();
+    const item = items.find((entry) => entry.id === itemId);
+    if (!match || !item) {
+      return snapshot(items);
+    }
+    const cachePath = await activeCoverCachePath();
+    await mkdir(cachePath, { recursive: true });
+    const coverPath = join(cachePath, `video-${itemId}.jpg`);
+    await writeFile(coverPath, Buffer.from(match[1], "base64"));
+    item.videoCoverPath = coverPath;
+    item.updatedAt = now();
+    await writeLibrary(items);
+    return snapshot(items);
+  });
+
   ipcMain.handle("library:open-external", async (_, itemId: string) => {
     const items = await readLibrary();
     const item = items.find((entry) => entry.id === itemId);
@@ -986,6 +1334,10 @@ app.whenReady().then(() => {
   ipcMain.handle("library:clear", async () => {
     await writeLibrary([]);
     await rm(importCachePath(), { recursive: true, force: true });
+    const settings = await readSettings();
+    settings.archiveDirectory = null;
+    settings.scannedArchiveDirectories = [];
+    await writeSettings(settings);
     return snapshot([]);
   });
 
@@ -999,6 +1351,10 @@ app.whenReady().then(() => {
 
   ipcMain.handle("app:relaunch-admin", async () => {
     relaunchAsAdmin();
+  });
+
+  ipcMain.handle("app:quit", async () => {
+    quitApp();
   });
 
   ipcMain.handle("app:set-fullscreen", async (_, enabled: boolean) => {
@@ -1071,6 +1427,19 @@ app.whenReady().then(() => {
     return snapshot(await readLibrary());
   });
 
+  ipcMain.handle("settings:set-archive-directory", async () => {
+    const selection = await dialog.showOpenDialog(mainWindow!, {
+      title: "Choose archive library folder",
+      properties: ["openDirectory", "createDirectory"]
+    });
+    const settings = await readSettings();
+    if (!selection.canceled && selection.filePaths[0]) {
+      settings.archiveDirectory = resolve(selection.filePaths[0]);
+      await writeSettings(settings);
+    }
+    return snapshot(await syncArchiveDirectory());
+  });
+
   ipcMain.handle("settings:clear-cover-cache", async () => {
     await rm(await activeCoverCachePath(), { recursive: true, force: true });
     const settings = await readSettings();
@@ -1079,7 +1448,8 @@ app.whenReady().then(() => {
     const items = await readLibrary();
     const restored = items.map((item) => ({
       ...item,
-      coverPath: item.pagePaths.find((pagePath) => existsSync(pagePath)) ?? item.coverPath
+      coverPath: item.pagePaths.find((pagePath) => existsSync(pagePath)) ?? item.coverPath,
+      videoCoverPath: null
     }));
     await writeLibrary(restored);
     return snapshot(restored);
@@ -1112,6 +1482,7 @@ app.whenReady().then(() => {
   });
 
   createWindow();
+  createTray();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -1121,7 +1492,11 @@ app.whenReady().then(() => {
 });
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
+  if (isQuitting && process.platform !== "darwin") {
     app.quit();
   }
+});
+
+app.on("before-quit", () => {
+  isQuitting = true;
 });

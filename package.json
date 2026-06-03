@@ -1,6 +1,6 @@
 {
   "name": "offline-comic-shelf",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "A local-first offline media library and comic organizer for Windows.",
   "main": "out/main/index.js",
   "author": "haoy633-star",
@@ -43,23 +43,21 @@
     ],
     "win": {
       "target": [
-        "nsis",
-        "portable"
+        "nsis"
       ],
       "requestedExecutionLevel": "asInvoker",
       "signAndEditExecutable": false
     },
     "nsis": {
       "artifactName": "${productName}-${version}-${arch}-Setup.${ext}",
+      "include": "build/installer.nsh",
+      "guid": "8f57f9bd-1f53-4f63-93b6-12f74e5fdfe4",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "allowElevation": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Offline Library"
-    },
-    "portable": {
-      "artifactName": "${productName}-${version}-${arch}-Portable.${ext}"
     }
   }
 }

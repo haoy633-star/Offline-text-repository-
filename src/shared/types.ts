@@ -1,6 +1,6 @@
 export type LibrarySourceType = "folder" | "archive" | "file";
 export type LibraryCategory = "comic" | "image" | "text" | "audio" | "video" | "series" | "archive" | "other";
-export type AppLanguage = "zh" | "en";
+export type AppLanguage = "zh" | "en" | "ja";
 export type LibrarySortKey = "az" | "za" | "newest" | "oldest" | "recent";
 
 export interface LibraryFile {
@@ -17,6 +17,7 @@ export interface LibraryItem {
   sourcePath: string;
   category: LibraryCategory;
   coverPath: string | null;
+  videoCoverPath: string | null;
   pagePaths: string[];
   pageCount: number;
   files: LibraryFile[];
@@ -44,6 +45,8 @@ export interface AppSettings {
   language: AppLanguage;
   coverCacheEnabled: boolean;
   coverCacheDirectory: string | null;
+  archiveDirectory: string | null;
+  scannedArchiveDirectories: string[];
   highPerformanceMode: boolean;
 }
 
