@@ -1,5 +1,7 @@
-import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
+import * as pdfjsLib from "pdfjs-dist";
+import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.js?url";
 import {
   BookOpen,
   CheckSquare,
@@ -46,6 +48,8 @@ import type {
 } from "../../shared/types";
 import "./styles.css";
 import taoImage from "./assets/tao.jpg";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 type ViewMode = "grid" | "reader" | "viewer" | "help";
 type FilterKey = "all" | "favorite" | LibraryCategory;
@@ -804,6 +808,90 @@ function DocumentCover({ item }: { item: LibraryItem }): JSX.Element {
   );
 }
 
+function PdfCanvasViewer({
+  fileUrl,
+  page,
+  zoom,
+  fitWidth,
+  title,
+  onPageCount
+}: {
+  fileUrl: string;
+  page: number;
+  zoom: number;
+  fitWidth: boolean;
+  title: string;
+  onPageCount: (count: number) => void;
+}): JSX.Element {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const shellRef = useRef<HTMLDivElement | null>(null);
+  const renderTaskRef = useRef<{ cancel: () => void } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    setError("");
+    setLoading(true);
+
+    async function renderPdfPage(): Promise<void> {
+      renderTaskRef.current?.cancel();
+      const documentTask = pdfjsLib.getDocument({ url: fileUrl });
+      const pdf = await documentTask.promise;
+      if (cancelled) return;
+      onPageCount(pdf.numPages);
+      const safePage = Math.max(1, Math.min(page, pdf.numPages));
+      const pdfPage = await pdf.getPage(safePage);
+      if (cancelled) return;
+
+      const baseViewport = pdfPage.getViewport({ scale: 1 });
+      const shellWidth = Math.max(360, shellRef.current?.clientWidth ?? baseViewport.width);
+      const scale = fitWidth ? Math.max(0.2, (shellWidth - 36) / baseViewport.width) : Math.max(0.25, zoom / 100);
+      const viewport = pdfPage.getViewport({ scale });
+      const canvas = canvasRef.current;
+      const context = canvas?.getContext("2d");
+      if (!canvas || !context) return;
+
+      const outputScale = Math.max(1, window.devicePixelRatio || 1);
+      canvas.width = Math.floor(viewport.width * outputScale);
+      canvas.height = Math.floor(viewport.height * outputScale);
+      canvas.style.width = `${viewport.width}px`;
+      canvas.style.height = `${viewport.height}px`;
+      context.setTransform(outputScale, 0, 0, outputScale, 0, 0);
+
+      const renderTask = pdfPage.render({ canvasContext: context, viewport });
+      renderTaskRef.current = renderTask;
+      await renderTask.promise;
+      if (!cancelled) setLoading(false);
+    }
+
+    void renderPdfPage().catch((reason) => {
+      if (cancelled || reason?.name === "RenderingCancelledException") return;
+      setError(reason instanceof Error ? reason.message : "PDF render failed");
+      setLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+      renderTaskRef.current?.cancel();
+    };
+  }, [fileUrl, fitWidth, onPageCount, page, zoom]);
+
+  return (
+    <div className="pdf-canvas-shell" ref={shellRef}>
+      {loading && <div className="pdf-loading">Loading...</div>}
+      {error ? (
+        <div className="document-fallback">
+          <FileText size={42} />
+          <p>{error}</p>
+        </div>
+      ) : (
+        <canvas className="pdf-canvas" ref={canvasRef} aria-label={title} />
+      )}
+    </div>
+  );
+}
+
 function statFromItems(items: LibraryItem[]): LibrarySnapshot["stats"] {
   return {
     items: items.length,
@@ -931,6 +1019,7 @@ function App(): JSX.Element {
   const [readerPageDraft, setReaderPageDraft] = useState("1");
   const [pdfPageDraft, setPdfPageDraft] = useState("1");
   const [pdfPage, setPdfPage] = useState(1);
+  const [pdfPageCount, setPdfPageCount] = useState(1);
   const [pdfZoom, setPdfZoom] = useState(100);
   const [pdfFitWidth, setPdfFitWidth] = useState(true);
   const [editorMode, setEditorMode] = useState(false);
@@ -938,7 +1027,6 @@ function App(): JSX.Element {
   const [showGithubCard, setShowGithubCard] = useState(false);
   const gridRef = useRef<HTMLDivElement | null>(null);
   const documentScrollRef = useRef<HTMLDivElement | null>(null);
-  const pdfFrameRef = useRef<HTMLIFrameElement | null>(null);
   const readingSaveTimer = useRef<number | null>(null);
   const [, setProgressTick] = useState(0);
 
@@ -1136,6 +1224,7 @@ function App(): JSX.Element {
     if (!selectedItem || selectedItem.category !== "text" || documentKindForPath(selectedItem.sourcePath) !== "pdf") return;
     setPdfPage(1);
     setPdfPageDraft("1");
+    setPdfPageCount(1);
     setPdfZoom(100);
     setPdfFitWidth(true);
   }, [selectedItem?.id, selectedItem?.sourcePath]);
@@ -1290,28 +1379,27 @@ function App(): JSX.Element {
       setPdfPageDraft(String(pdfPage));
       return;
     }
-    const nextPage = Math.max(1, value);
+    const nextPage = Math.max(1, Math.min(pdfPageCount, value));
     setPdfPage(nextPage);
     setPdfPageDraft(String(nextPage));
   }
 
   function changePdfPage(delta: number): void {
-    const nextPage = Math.max(1, pdfPage + delta);
+    const nextPage = Math.max(1, Math.min(pdfPageCount, pdfPage + delta));
     setPdfPage(nextPage);
     setPdfPageDraft(String(nextPage));
   }
 
-  function pdfSource(filePath: string): string {
-    const zoom = pdfFitWidth ? "page-width" : String(pdfZoom);
-    return `${window.comicShelf.assetUrl(filePath)}#page=${pdfPage}&zoom=${zoom}&toolbar=0&navpanes=0`;
-  }
-
   function printPdf(): void {
-    try {
-      pdfFrameRef.current?.contentWindow?.print();
-    } catch {
+    const canvas = document.querySelector(".pdf-canvas") as HTMLCanvasElement | null;
+    const printWindow = window.open("", "_blank", "width=900,height=1200");
+    if (!canvas || !printWindow) {
       if (selectedItem) void openExternal(selectedItem);
+      return;
     }
+    const imageUrl = canvas.toDataURL("image/png");
+    printWindow.document.write(`<!doctype html><html><head><title>Print PDF page</title></head><body style="margin:0;background:#fff;"><img src="${imageUrl}" style="width:100%;height:auto;display:block;" onload="window.print();window.close();" /></body></html>`);
+    printWindow.document.close();
   }
 
   async function toggleFavorite(item: LibraryItem): Promise<void> {
@@ -1688,6 +1776,10 @@ function App(): JSX.Element {
   const shellClass = `app-shell ${pureReading ? "pure-reading" : ""}`;
   const readerImageClass = `reader-image fit-${fitMode}`;
   const isPdfViewer = selectedItem?.category === "text" && documentKindForPath(selectedItem.sourcePath) === "pdf";
+  const handlePdfPageCount = useCallback((count: number) => {
+    setPdfPageCount(count);
+    setPdfPage((current) => Math.max(1, Math.min(count, current)));
+  }, []);
   const documentTextStyle = {
     ["--doc-font-size" as string]: `${textTheme.fontSize}px`,
     ["--doc-line-height" as string]: String(textTheme.lineHeight),
@@ -2127,6 +2219,7 @@ function App(): JSX.Element {
                       <input
                         type="number"
                         min={1}
+                        max={pdfPageCount}
                         value={pdfPageDraft}
                         onChange={(event) => setPdfPageDraft(event.target.value)}
                         onBlur={jumpToPdfPage}
@@ -2134,7 +2227,7 @@ function App(): JSX.Element {
                           if (event.key === "Enter") jumpToPdfPage();
                         }}
                       />
-                      <span>{t.page}</span>
+                      <span>/ {pdfPageCount}</span>
                     </label>
                     <button title={t.next} onClick={() => changePdfPage(1)}>
                       <ChevronRight size={18} />
@@ -2289,12 +2382,13 @@ function App(): JSX.Element {
             {selectedItem.category === "text" &&
               (documentKindForPath(selectedItem.sourcePath) === "pdf" ? (
                 <div className="document-reader pdf-reader">
-                  <iframe
-                    key={`${selectedItem.id}-${pdfPage}-${pdfZoom}-${pdfFitWidth ? "fit" : "zoom"}`}
-                    ref={pdfFrameRef}
-                    className="document-frame"
-                    src={pdfSource(selectedItem.sourcePath)}
+                  <PdfCanvasViewer
+                    fileUrl={window.comicShelf.assetUrl(selectedItem.sourcePath)}
+                    fitWidth={pdfFitWidth}
+                    onPageCount={handlePdfPageCount}
+                    page={pdfPage}
                     title={selectedItem.title}
+                    zoom={pdfZoom}
                   />
                 </div>
               ) : textContent ? (
