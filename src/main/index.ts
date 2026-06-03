@@ -61,6 +61,11 @@ protocol.registerSchemesAsPrivileged([
   }
 ]);
 
+const singleInstanceLock = app.requestSingleInstanceLock();
+if (!singleInstanceLock) {
+  app.quit();
+}
+
 function libraryPath(): string {
   return join(app.getPath("userData"), "library.json");
 }
@@ -139,6 +144,7 @@ function mimeTypeForFile(filePath: string): string {
     ".flac": "audio/flac",
     ".ogg": "audio/ogg",
     ".m4a": "audio/mp4",
+    ".pdf": "application/pdf",
     ".txt": "text/plain; charset=utf-8",
     ".md": "text/markdown; charset=utf-8"
   };
@@ -235,6 +241,20 @@ function decodeXmlText(value: string): string {
     .replace(/&amp;/g, "&");
 }
 
+function htmlToReadableText(value: string): string {
+  return decodeXmlText(
+    value
+      .replace(/<script[\s\S]*?<\/script>/gi, "")
+      .replace(/<style[\s\S]*?<\/style>/gi, "")
+      .replace(/<(br|hr)\s*\/?>/gi, "\n")
+      .replace(/<\/(p|div|section|article|chapter|h[1-6]|li)>/gi, "\n")
+      .replace(/<[^>]+>/g, "")
+      .replace(/[ \t]+\n/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim()
+  );
+}
+
 async function readDocumentText(filePath: string): Promise<string> {
   const extension = extname(filePath).toLowerCase();
   if ([".txt", ".md", ".markdown"].includes(extension)) {
@@ -253,6 +273,19 @@ async function readDocumentText(filePath: string): Promise<string> {
         .replace(/\n{3,}/g, "\n\n")
         .trim()
     );
+  }
+
+  if (extension === ".epub") {
+    const zip = await JSZip.loadAsync(await readFile(filePath));
+    const chapters = Object.values(zip.files)
+      .filter((entry) => !entry.dir && /\.(xhtml|html|htm)$/i.test(entry.name))
+      .sort((a, b) => naturalCompare(a.name, b.name));
+    const textParts: string[] = [];
+    for (const chapter of chapters) {
+      const text = htmlToReadableText(await chapter.async("string"));
+      if (text) textParts.push(text);
+    }
+    return textParts.join("\n\n").trim();
   }
 
   return "";
@@ -1182,6 +1215,8 @@ function showMainWindow(): void {
   mainWindow.focus();
 }
 
+app.on("second-instance", showMainWindow);
+
 function quitApp(): void {
   isQuitting = true;
   app.quit();
@@ -1312,6 +1347,8 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  if (!singleInstanceLock) return;
+
   electronApp.setAppUserModelId("io.github.haoy633star.offlinecomicshelf");
   Menu.setApplicationMenu(null);
 

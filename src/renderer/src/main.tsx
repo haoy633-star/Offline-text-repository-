@@ -535,6 +535,12 @@ localizedCopy.ja.createComicFromImages = "画像集を作成";
 localizedCopy.ja.newComicPrompt = "新しい画像集フォルダー名を入力してください。選択した画像をそのフォルダーへ移動します。";
 localizedCopy.ja.categories.comic = "画像集";
 localizedCopy.ja.compressComicFolders = "フォルダー画像集を CBZ に圧縮";
+localizedCopy.zh.categories.series = "视频集";
+localizedCopy.zh.episode = "视频";
+localizedCopy.en.categories.series = "Video Sets";
+localizedCopy.en.episode = "Video";
+localizedCopy.ja.categories.series = "動画集";
+localizedCopy.ja.episode = "動画";
 
 function helpParagraphs(language: AppLanguage): string[] {
   if (language === "en") {
@@ -839,6 +845,7 @@ function App(): JSX.Element {
   );
   const [selectedEpisodePath, setSelectedEpisodePath] = useState<string | null>(null);
   const [pageDraft, setPageDraft] = useState("1");
+  const [readerPageDraft, setReaderPageDraft] = useState("1");
   const [editorMode, setEditorMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showGithubCard, setShowGithubCard] = useState(false);
@@ -916,6 +923,11 @@ function App(): JSX.Element {
   useEffect(() => {
     setPageDraft(String(Math.min(page, pageCount)));
   }, [page, pageCount]);
+
+  useEffect(() => {
+    if (!selectedItem) return;
+    setReaderPageDraft(String(selectedItem.currentPage + 1));
+  }, [selectedItem?.currentPage, selectedItem?.id]);
 
   useEffect(() => {
     window.localStorage.setItem("offline-library-grid-columns", String(gridColumns));
@@ -1099,6 +1111,18 @@ function App(): JSX.Element {
 
   async function goToPage(page: number): Promise<void> {
     if (selectedItem) await markProgress(selectedItem, page);
+  }
+
+  function jumpToReaderPage(): void {
+    if (!selectedItem) return;
+    const value = Number.parseInt(readerPageDraft, 10);
+    if (!Number.isFinite(value)) {
+      setReaderPageDraft(String(selectedItem.currentPage + 1));
+      return;
+    }
+    const nextPage = Math.max(1, Math.min(selectedItem.pageCount, value));
+    setReaderPageDraft(String(nextPage));
+    void goToPage(nextPage - 1);
   }
 
   async function toggleFavorite(item: LibraryItem): Promise<void> {
@@ -1536,7 +1560,11 @@ function App(): JSX.Element {
                   <button title={t.choosePlayer} onClick={() => void setPlayer(category)}>
                     <FolderOpen size={15} />
                   </button>
-                  <button title={t.internalViewer} onClick={() => void useInternalPlayer(category)}>
+                  <button
+                    className={snapshot.settings.internalPlayerCategories.includes(category) ? "active" : ""}
+                    title={t.internalViewer}
+                    onClick={() => void useInternalPlayer(category)}
+                  >
                     <BookOpen size={15} />
                   </button>
                   <button title={t.clearDefault} onClick={() => void clearPlayer(category)}>
@@ -1555,7 +1583,11 @@ function App(): JSX.Element {
                 <button title={t.choosePlayer} onClick={() => void setDocumentPlayer(kind)}>
                   <FolderOpen size={15} />
                 </button>
-                <button title={t.internalViewer} onClick={() => void useInternalDocumentPlayer(kind)}>
+                <button
+                  className={snapshot.settings.internalDocumentKinds.includes(kind) ? "active" : ""}
+                  title={t.internalViewer}
+                  onClick={() => void useInternalDocumentPlayer(kind)}
+                >
                   <BookOpen size={15} />
                 </button>
                 <button title={t.clearDefault} onClick={() => void clearDocumentPlayer(kind)}>
@@ -1947,6 +1979,20 @@ function App(): JSX.Element {
                   value={selectedItem.currentPage}
                   onChange={(event) => void goToPage(Number(event.target.value))}
                 />
+                <label className="reader-page-jump" title={t.jumpPage}>
+                  <span>{t.jumpPage}</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={selectedItem.pageCount}
+                    value={readerPageDraft}
+                    onChange={(event) => setReaderPageDraft(event.target.value)}
+                    onBlur={jumpToReaderPage}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") jumpToReaderPage();
+                    }}
+                  />
+                </label>
                 <button title={t.next} onClick={() => void goToPage(selectedItem.currentPage + 1)}>
                   <ChevronRight size={20} />
                 </button>

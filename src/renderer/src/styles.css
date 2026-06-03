@@ -354,7 +354,7 @@ input[type="range"] {
 
 .player-row {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) 28px 28px 28px;
+  grid-template-columns: 52px minmax(0, 1fr) 30px 30px 30px;
   align-items: center;
   gap: 6px;
 }
@@ -377,10 +377,20 @@ input[type="range"] {
 }
 
 .player-row button {
-  min-height: 28px;
+  min-height: 30px;
   border-radius: 6px;
   background: #2b3036;
   color: #cbd3dc;
+}
+
+.player-row button:hover {
+  background: #39414a;
+  color: #fff6e7;
+}
+
+.player-row button.active {
+  background: #d89b47;
+  color: #15120f;
 }
 
 .stats {
@@ -988,6 +998,25 @@ input[type="range"] {
   flex: 0 0 180px;
   width: 180px;
   accent-color: #e5a24d;
+}
+
+.reader-page-jump {
+  display: grid;
+  grid-template-columns: auto 58px;
+  align-items: center;
+  gap: 6px;
+  color: #a8b0b8;
+  font-size: 12px;
+}
+
+.reader-page-jump input {
+  height: 34px;
+  width: 58px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 8px;
+  background: #20242a;
+  color: #f6f2ea;
+  text-align: center;
 }
 
 .reader-actions select {
