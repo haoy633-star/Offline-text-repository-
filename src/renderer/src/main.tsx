@@ -55,6 +55,7 @@ type ViewMode = "grid" | "reader" | "viewer" | "help";
 type FilterKey = "all" | "favorite" | LibraryCategory;
 type FitMode = "page" | "width" | "actual";
 type DisplayMode = "paged" | "scroll";
+type ReaderDisplayMode = "paged" | "scroll";
 type TextTheme = {
   fontSize: number;
   lineHeight: number;
@@ -790,6 +791,9 @@ function VideoCoverPreview({ item }: { item: LibraryItem }): JSX.Element {
 function DocumentCover({ item }: { item: LibraryItem }): JSX.Element {
   const suffix = documentTypeSuffix(item.sourcePath);
   const preview = item.previewText?.trim();
+  if (documentKindForPath(item.sourcePath) === "pdf") {
+    return <PdfCoverPreview item={item} suffix={suffix} />;
+  }
   return (
     <div className={`document-cover document-cover-${documentKindForPath(item.sourcePath)}`}>
       <div className="document-cover-top">
@@ -808,11 +812,61 @@ function DocumentCover({ item }: { item: LibraryItem }): JSX.Element {
   );
 }
 
+function PdfCoverPreview({ item, suffix }: { item: LibraryItem; suffix: string }): JSX.Element {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function renderCover(): Promise<void> {
+      const canvas = canvasRef.current;
+      const context = canvas?.getContext("2d");
+      if (!canvas || !context) return;
+      const documentTask = pdfjsLib.getDocument({ url: window.comicShelf.assetUrl(item.sourcePath) });
+      const pdf = await documentTask.promise;
+      const page = await pdf.getPage(1);
+      if (cancelled) return;
+      const viewport = page.getViewport({ scale: 0.42 });
+      const outputScale = Math.max(1, window.devicePixelRatio || 1);
+      canvas.width = Math.floor(viewport.width * outputScale);
+      canvas.height = Math.floor(viewport.height * outputScale);
+      canvas.style.width = `${viewport.width}px`;
+      canvas.style.height = `${viewport.height}px`;
+      context.setTransform(outputScale, 0, 0, outputScale, 0, 0);
+      await page.render({ canvasContext: context, viewport }).promise;
+    }
+    void renderCover().catch(() => {
+      if (!cancelled) setFailed(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [item.sourcePath]);
+
+  return (
+    <div className="document-cover pdf-cover-preview">
+      <div className="document-cover-top">
+        <FileText size={23} />
+        <strong>{suffix}</strong>
+      </div>
+      {failed ? (
+        <div className="document-cover-empty">
+          <span>{suffix}</span>
+          <small>{item.title}</small>
+        </div>
+      ) : (
+        <canvas ref={canvasRef} aria-label={item.title} />
+      )}
+    </div>
+  );
+}
+
 function PdfCanvasViewer({
   fileUrl,
   page,
   zoom,
   fitWidth,
+  mode,
   title,
   onPageCount
 }: {
@@ -820,14 +874,18 @@ function PdfCanvasViewer({
   page: number;
   zoom: number;
   fitWidth: boolean;
+  mode: ReaderDisplayMode;
   title: string;
   onPageCount: (count: number) => void;
 }): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const scrollCanvasRefs = useRef(new Map<number, HTMLCanvasElement>());
   const shellRef = useRef<HTMLDivElement | null>(null);
   const renderTaskRef = useRef<{ cancel: () => void } | null>(null);
+  const scrollRenderTasksRef = useRef<Array<{ cancel: () => void }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [pageNumbers, setPageNumbers] = useState<number[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -840,6 +898,38 @@ function PdfCanvasViewer({
       const pdf = await documentTask.promise;
       if (cancelled) return;
       onPageCount(pdf.numPages);
+      if (mode === "scroll") {
+        setPageNumbers(Array.from({ length: pdf.numPages }, (_, index) => index + 1));
+        await new Promise<void>((resolve) => {
+          window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve()));
+        });
+        await Promise.all(
+          Array.from({ length: pdf.numPages }, async (_, index) => {
+            const pageNumber = index + 1;
+            const pdfPage = await pdf.getPage(pageNumber);
+            if (cancelled) return;
+            const baseViewport = pdfPage.getViewport({ scale: 1 });
+            const shellWidth = Math.max(360, shellRef.current?.clientWidth ?? baseViewport.width);
+            const scale = fitWidth ? Math.max(0.2, (shellWidth - 44) / baseViewport.width) : Math.max(0.25, zoom / 100);
+            const viewport = pdfPage.getViewport({ scale });
+            const canvas = scrollCanvasRefs.current.get(pageNumber);
+            const context = canvas?.getContext("2d");
+            if (!canvas || !context) return;
+            const outputScale = Math.max(1, window.devicePixelRatio || 1);
+            canvas.width = Math.floor(viewport.width * outputScale);
+            canvas.height = Math.floor(viewport.height * outputScale);
+            canvas.style.width = `${viewport.width}px`;
+            canvas.style.height = `${viewport.height}px`;
+            context.setTransform(outputScale, 0, 0, outputScale, 0, 0);
+            const task = pdfPage.render({ canvasContext: context, viewport });
+            scrollRenderTasksRef.current.push(task);
+            await task.promise;
+          })
+        );
+        if (!cancelled) setLoading(false);
+        return;
+      }
+
       const safePage = Math.max(1, Math.min(page, pdf.numPages));
       const pdfPage = await pdf.getPage(safePage);
       if (cancelled) return;
@@ -874,8 +964,10 @@ function PdfCanvasViewer({
     return () => {
       cancelled = true;
       renderTaskRef.current?.cancel();
+      for (const task of scrollRenderTasksRef.current) task.cancel();
+      scrollRenderTasksRef.current = [];
     };
-  }, [fileUrl, fitWidth, onPageCount, page, zoom]);
+  }, [fileUrl, fitWidth, mode, onPageCount, page, zoom]);
 
   return (
     <div className="pdf-canvas-shell" ref={shellRef}>
@@ -884,6 +976,20 @@ function PdfCanvasViewer({
         <div className="document-fallback">
           <FileText size={42} />
           <p>{error}</p>
+        </div>
+      ) : mode === "scroll" ? (
+        <div className="pdf-scroll-pages">
+          {pageNumbers.map((pageNumber) => (
+            <canvas
+              className="pdf-canvas"
+              key={pageNumber}
+              ref={(node) => {
+                if (node) scrollCanvasRefs.current.set(pageNumber, node);
+                else scrollCanvasRefs.current.delete(pageNumber);
+              }}
+              aria-label={`${title} page ${pageNumber}`}
+            />
+          ))}
         </div>
       ) : (
         <canvas className="pdf-canvas" ref={canvasRef} aria-label={title} />
@@ -995,6 +1101,9 @@ function App(): JSX.Element {
   const [fitMode, setFitMode] = useState<FitMode>("page");
   const [pureReading, setPureReading] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [readerDisplayMode, setReaderDisplayMode] = useState<ReaderDisplayMode>(
+    () => (window.localStorage.getItem("offline-library-reader-display-mode") === "scroll" ? "scroll" : "paged")
+  );
   const [textContent, setTextContent] = useState("");
   const [textTheme, setTextTheme] = useState<TextTheme>(() => {
     try {
@@ -1116,6 +1225,10 @@ function App(): JSX.Element {
   }, [displayMode]);
 
   useEffect(() => {
+    window.localStorage.setItem("offline-library-reader-display-mode", readerDisplayMode);
+  }, [readerDisplayMode]);
+
+  useEffect(() => {
     window.localStorage.setItem("offline-library-text-theme", JSON.stringify(textTheme));
   }, [textTheme]);
 
@@ -1172,6 +1285,12 @@ function App(): JSX.Element {
       if (selectedItem && viewMode === "viewer") {
         const isPdf = selectedItem.category === "text" && documentKindForPath(selectedItem.sourcePath) === "pdf";
         if (isPdf) {
+          if (readerDisplayMode === "scroll") {
+            if (event.key === "Escape") {
+              pureReading ? void exitPureReading() : setViewMode("grid");
+            }
+            return;
+          }
           if (event.key === "ArrowRight" || event.key === "ArrowDown" || event.key === "PageDown" || event.key === " ") {
             event.preventDefault();
             changePdfPage(1);
@@ -1204,6 +1323,26 @@ function App(): JSX.Element {
       }
 
       if (!selectedItem || viewMode !== "reader") return;
+      if (readerDisplayMode === "scroll") {
+        const scrollStage = document.querySelector(".page-scroll-stage") as HTMLElement | null;
+        if (event.key === "ArrowRight" || event.key === "ArrowDown" || event.key === "PageDown" || event.key === " ") {
+          event.preventDefault();
+          scrollStage?.scrollBy({ top: Math.max(320, (scrollStage.clientHeight || window.innerHeight) * 0.82), behavior: "smooth" });
+        }
+        if (event.key === "ArrowLeft" || event.key === "ArrowUp" || event.key === "PageUp") {
+          event.preventDefault();
+          scrollStage?.scrollBy({ top: -Math.max(320, (scrollStage.clientHeight || window.innerHeight) * 0.82), behavior: "smooth" });
+        }
+        if (event.key === "+") setZoom((value) => Math.min(300, value + 10));
+        if (event.key === "-") setZoom((value) => Math.max(40, value - 10));
+        if (event.key.toLowerCase() === "f") {
+          pureReading ? void exitPureReading() : void enterFullscreenReading();
+        }
+        if (event.key === "Escape") {
+          pureReading ? void exitPureReading() : setViewMode("grid");
+        }
+        return;
+      }
       if (event.key === "ArrowRight" || event.key === " ") {
         event.preventDefault();
         void goToPage(selectedItem.currentPage + 1);
@@ -1223,7 +1362,7 @@ function App(): JSX.Element {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [displayMode, pageCount, pdfPage, pdfPageCount, pureReading, selectedItem, viewMode]);
+  }, [displayMode, pageCount, pdfPage, pdfPageCount, pureReading, readerDisplayMode, selectedItem, viewMode]);
 
   useEffect(() => {
     if (!selectedItem || viewMode !== "viewer" || selectedItem.category !== "text") return;
@@ -2288,6 +2427,10 @@ function App(): JSX.Element {
                     <button title={t.fitWidth} onClick={() => setPdfFitWidth(true)}>
                       <ChevronsRight size={17} />
                     </button>
+                    <select value={readerDisplayMode} onChange={(event) => setReaderDisplayMode(event.target.value as ReaderDisplayMode)}>
+                      <option value="paged">{t.pagedMode}</option>
+                      <option value="scroll">{t.scrollMode}</option>
+                    </select>
                     <button
                       title={t.resetZoom}
                       onClick={() => {
@@ -2413,9 +2556,16 @@ function App(): JSX.Element {
             {selectedItem.category === "text" &&
               (documentKindForPath(selectedItem.sourcePath) === "pdf" ? (
                 <div className="document-reader pdf-reader">
+                  {readerDisplayMode === "paged" && (
+                    <>
+                      <button className="page-hitbox left pdf-hitbox" title={t.prev} onClick={() => changePdfPage(-1)} />
+                      <button className="page-hitbox right pdf-hitbox" title={t.next} onClick={() => changePdfPage(1)} />
+                    </>
+                  )}
                   <PdfCanvasViewer
                     fileUrl={window.comicShelf.assetUrl(selectedItem.sourcePath)}
                     fitWidth={pdfFitWidth}
+                    mode={readerDisplayMode}
                     onPageCount={handlePdfPageCount}
                     page={pdfPage}
                     title={selectedItem.title}
@@ -2519,6 +2669,10 @@ function App(): JSX.Element {
                   <option value="width">{t.fitWidth}</option>
                   <option value="actual">{t.actualSize}</option>
                 </select>
+                <select value={readerDisplayMode} onChange={(event) => setReaderDisplayMode(event.target.value as ReaderDisplayMode)}>
+                  <option value="paged">{t.pagedMode}</option>
+                  <option value="scroll">{t.scrollMode}</option>
+                </select>
                 <button title={t.fullscreen} onClick={() => void enterFullscreenReading()}>
                   <Maximize2 size={18} />
                 </button>
@@ -2530,16 +2684,31 @@ function App(): JSX.Element {
               {t.exitPure}
             </button>
           )}
-          <div className="page-stage">
-            <button className="page-hitbox left" title={t.prev} onClick={() => void goToPage(selectedItem.currentPage - 1)} />
-            <img
-              className={readerImageClass}
-              style={{ ["--zoom" as string]: `${zoom}%`, ["--zoom-scale" as string]: String(zoom / 100) }}
-              src={window.comicShelf.assetUrl(selectedItem.pagePaths[selectedItem.currentPage])}
-              alt={`${selectedItem.title} page ${selectedItem.currentPage + 1}`}
-            />
-            <button className="page-hitbox right" title={t.next} onClick={() => void goToPage(selectedItem.currentPage + 1)} />
-          </div>
+          {readerDisplayMode === "scroll" ? (
+            <div className="page-scroll-stage">
+              {selectedItem.pagePaths.map((pagePath, index) => (
+                <img
+                  className={readerImageClass}
+                  key={pagePath}
+                  loading={index < 3 ? "eager" : "lazy"}
+                  style={{ ["--zoom" as string]: `${zoom}%`, ["--zoom-scale" as string]: String(zoom / 100) }}
+                  src={window.comicShelf.assetUrl(pagePath)}
+                  alt={`${selectedItem.title} page ${index + 1}`}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="page-stage">
+              <button className="page-hitbox left" title={t.prev} onClick={() => void goToPage(selectedItem.currentPage - 1)} />
+              <img
+                className={readerImageClass}
+                style={{ ["--zoom" as string]: `${zoom}%`, ["--zoom-scale" as string]: String(zoom / 100) }}
+                src={window.comicShelf.assetUrl(selectedItem.pagePaths[selectedItem.currentPage])}
+                alt={`${selectedItem.title} page ${selectedItem.currentPage + 1}`}
+              />
+              <button className="page-hitbox right" title={t.next} onClick={() => void goToPage(selectedItem.currentPage + 1)} />
+            </div>
+          )}
         </section>
       )}
 
