@@ -774,10 +774,13 @@ localizedCopy.ja.categories.comic = "画像集";
 localizedCopy.ja.compressComicFolders = "フォルダー画像集を CBZ に圧縮";
 localizedCopy.zh.categories.series = "视频集";
 localizedCopy.zh.episode = "视频";
+(localizedCopy.zh as Record<string, unknown>).performanceSettings = "\u6027\u80fd\u4e0e\u7f13\u5b58\u8bbe\u7f6e";
 localizedCopy.en.categories.series = "Video Sets";
 localizedCopy.en.episode = "Video";
+(localizedCopy.en as Record<string, unknown>).performanceSettings = "Performance and Cache";
 localizedCopy.ja.categories.series = "動画集";
 localizedCopy.ja.episode = "動画";
+(localizedCopy.ja as Record<string, unknown>).performanceSettings = "\u6027\u80fd\u3068\u30ad\u30e3\u30c3\u30b7\u30e5\u8a2d\u5b9a";
 localizedCopy.ja.rememberProgress = "読書位置を記憶";
 localizedCopy.ja.enableRememberProgress = "記憶をオン";
 localizedCopy.ja.disableRememberProgress = "記憶をオフ";
@@ -2564,7 +2567,7 @@ function App(): JSX.Element {
             </button>
             <button className="organize-button secondary" onClick={() => setViewMode("settings")}>
               <Settings size={16} />
-              <span>性能与缓存设置</span>
+              <span>{((t as unknown) as Record<string, string>).performanceSettings}</span>
             </button>
           </section>
 

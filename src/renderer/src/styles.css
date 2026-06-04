@@ -312,6 +312,28 @@ body.tray-idle .video-preview-shell video {
   color: #fff6e6;
 }
 
+.admin-button svg,
+.organize-button svg,
+.danger-button svg,
+.utility-panel button svg,
+.help-content button svg {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+}
+
+.organize-panel .organize-button,
+.organize-panel .danger-button {
+  line-height: 1.18;
+  white-space: normal;
+}
+
+.organize-panel .organize-button span,
+.organize-panel .danger-button span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .admin-button {
   background: #55362b;
 }

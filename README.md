@@ -20,6 +20,19 @@ Please download the installer from the GitHub Releases page when a release packa
 
 日本語：インストーラーはこのソースリポジトリには直接置いていません。ダウンロードは GitHub Releases から行ってください。
 
+## Screenshots
+
+![Offline Library shelf demo](./docs/screenshots/offline-library-01.png)
+
+More examples:
+
+- [Library with imported demo resources](./docs/screenshots/offline-library-01.png)
+- [Main shelf and language menu](./docs/screenshots/offline-library-02.png)
+- [Performance and cache settings](./docs/screenshots/offline-library-03.png)
+- [Cache controls and low-memory options](./docs/screenshots/offline-library-04.png)
+- [Built-in image reader](./docs/screenshots/offline-library-05.png)
+- [Built-in text reader](./docs/screenshots/offline-library-06.png)
+
 ## What This App Can Do
 
 ### Library and Import
