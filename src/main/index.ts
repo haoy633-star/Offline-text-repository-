@@ -2,9 +2,9 @@ import { app, BrowserWindow, Menu, Tray, dialog, ipcMain, nativeImage, protocol,
 import { electronApp, optimizer } from "@electron-toolkit/utils";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createReadStream, existsSync, statSync } from "node:fs";
-import { copyFile, cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
-import { cpus } from "node:os";
+import { createReadStream, existsSync, statSync, type Dirent } from "node:fs";
+import { appendFile, copyFile, cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { cpus, totalmem } from "node:os";
 import { basename, dirname, extname, join, parse, relative, resolve } from "node:path";
 import { Readable } from "node:stream";
 import JSZip from "jszip";
@@ -21,8 +21,15 @@ import type {
   LibraryItem,
   LibrarySnapshot,
   OpenResult,
-  OrganizeResult
+  OrganizeResult,
+  PerformancePreset,
+  PerformanceSettings,
+  SystemProfile
 } from "../shared/types";
+
+// Electron 主进程入口：这里负责窗口、托盘、文件扫描、导入归档、外部播放器、缓存和系统级能力。
+// Mac 适配时优先看本文件里和 Windows 路径、播放器路径、NSIS 安装器、shell 打开方式相关的逻辑。
+app.commandLine.appendSwitch("js-flags", "--expose-gc");
 
 const imageExtensions = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".avif"]);
 const textExtensions = new Set([".txt", ".md", ".markdown", ".pdf", ".epub", ".mobi", ".azw3", ".doc", ".docx"]);
@@ -40,13 +47,29 @@ const categoryFolders: Record<LibraryCategory, string> = {
   archive: "Archives",
   other: "Other"
 };
+const defaultPerformanceSettings: PerformanceSettings = {
+  preset: "balanced",
+  lazyLibraryIndex: false,
+  lazyPagePaths: false,
+  demandLoadCovers: true,
+  reducedCoverCache: false,
+  staticVideoPreview: false,
+  readerNearbyPagesOnly: true,
+  tightVirtualization: true,
+  idleAutoRelease: true,
+  idleReleaseMinutes: 5,
+  coverPreviewWidth: 360,
+  coverPreviewQuality: 78
+};
 
 sharp.concurrency(Math.max(2, Math.min(8, cpus().length - 1)));
+sharp.cache({ memory: 96, items: 256, files: 0 });
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let activeImportStartedAt = 0;
 let isQuitting = false;
+let archiveSyncPromise: Promise<LibraryItem[]> | null = null;
 const referenceWindows = new Set<BrowserWindow>();
 
 protocol.registerSchemesAsPrivileged([
@@ -66,6 +89,66 @@ if (!singleInstanceLock) {
   app.quit();
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
+}
+
+function isBackgroundMode(): boolean {
+  return !mainWindow || !mainWindow.isVisible() || mainWindow.isMinimized();
+}
+
+function scanConcurrency(): number {
+  if (isBackgroundMode()) return 1;
+  return Math.max(2, Math.min(8, cpus().length));
+}
+
+async function throttleBackgroundScan(step: number): Promise<void> {
+  if (isBackgroundMode() && step % 25 === 0) {
+    await sleep(20);
+  }
+}
+
+function configureResourceMode(): void {
+  // 前台/后台资源策略：窗口隐藏到托盘时降低 sharp 并发和缓存，减少常驻内存。
+  const background = isBackgroundMode();
+  mainWindow?.webContents.send("app:background-mode", background);
+  if (background) {
+    sharp.concurrency(1);
+    sharp.cache({ memory: 8, items: 16, files: 0 });
+    return;
+  }
+  sharp.concurrency(Math.max(2, Math.min(8, cpus().length - 1)));
+  sharp.cache({ memory: 96, items: 256, files: 0 });
+}
+
+async function releaseIdleMemory(): Promise<void> {
+  // 渲染层空闲一段时间后会调用这里，主动收紧图片处理缓存。
+  const settings = await readSettings();
+  const foregroundMemory = settings.performance.reducedCoverCache ? 12 : 24;
+  const foregroundItems = settings.performance.reducedCoverCache ? 24 : 48;
+  sharp.cache(false);
+  sharp.cache({ memory: isBackgroundMode() ? 8 : foregroundMemory, items: isBackgroundMode() ? 16 : foregroundItems, files: 0 });
+  if (typeof global.gc === "function") {
+    global.gc();
+  }
+}
+
+async function mapWithConcurrency<T, R>(items: T[], concurrency: number, mapper: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(1, concurrency), Math.max(1, items.length));
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        results[index] = await mapper(items[index], index);
+      }
+    })
+  );
+  return results;
+}
+
 function libraryPath(): string {
   return join(app.getPath("userData"), "library.json");
 }
@@ -80,6 +163,31 @@ function importCachePath(): string {
 
 function coverCachePath(): string {
   return join(app.getPath("userData"), "cover-cache");
+}
+
+function languageFromLocale(locale: string): AppLanguage {
+  const normalized = locale.toLowerCase();
+  if (normalized.startsWith("zh")) return "zh";
+  if (normalized.startsWith("ja")) return "ja";
+  if (normalized.startsWith("en")) return "en";
+  return "en";
+}
+
+function recommendedPresetForSystem(memoryGb: number, cpuCores: number): PerformancePreset {
+  if (memoryGb >= 32 && cpuCores >= 8) return "extreme";
+  if (memoryGb >= 16 && cpuCores >= 6) return "high";
+  if (memoryGb < 8 || cpuCores <= 4) return "low";
+  return "balanced";
+}
+
+function systemProfile(): SystemProfile {
+  const memoryGb = Math.round((totalmem() / 1024 ** 3) * 10) / 10;
+  const cpuCores = cpus().length;
+  return {
+    cpuCores,
+    memoryGb,
+    recommendedPreset: recommendedPresetForSystem(memoryGb, cpuCores)
+  };
 }
 
 async function activeCoverCachePath(): Promise<string> {
@@ -198,6 +306,21 @@ function isVideo(filePath: string): boolean {
   return videoExtensions.has(extname(filePath).toLowerCase());
 }
 
+async function directoryEntryStats(folderPath: string): Promise<{ directories: number; files: number; images: number; videos: number }> {
+  try {
+    const entries = await readdir(folderPath, { withFileTypes: true });
+    const files = entries.filter((entry) => entry.isFile()).map((entry) => join(folderPath, entry.name));
+    return {
+      directories: entries.filter((entry) => entry.isDirectory()).length,
+      files: files.length,
+      images: files.filter(isImage).length,
+      videos: files.filter(isVideo).length
+    };
+  } catch {
+    return { directories: 0, files: 0, images: 0, videos: 0 };
+  }
+}
+
 function toLibraryFile(filePath: string): LibraryFile {
   return {
     path: filePath,
@@ -212,6 +335,19 @@ function emitImportProgress(progress: Omit<ImportProgress, "startedAt">): void {
     ...progress,
     startedAt: activeImportStartedAt
   } satisfies ImportProgress);
+}
+
+function emitLibraryChanged(): void {
+  mainWindow?.webContents.send("library:changed");
+}
+
+async function logScanSkip(targetPath: string, error: unknown): Promise<void> {
+  const message = error instanceof Error ? error.message : String(error);
+  try {
+    await appendFile(join(app.getPath("userData"), "scan-errors.log"), `[${new Date().toISOString()}] ${targetPath}: ${message}\n`, "utf8");
+  } catch {
+    // Logging must never break library scans.
+  }
 }
 
 async function createTextPreview(filePath: string): Promise<string | null> {
@@ -302,10 +438,13 @@ async function cacheCoverIfEnabled(itemId: string, coverPath: string | null): Pr
   }
 
   const cachePath = settings.coverCacheDirectory || coverCachePath();
+  const coverWidth = Math.max(160, Math.min(720, Math.round(settings.performance.coverPreviewWidth || 360)));
+  const coverHeight = Math.round(coverWidth * 1.5);
+  const coverQuality = Math.max(45, Math.min(92, Math.round(settings.performance.coverPreviewQuality || 78)));
   const cachedPath = join(cachePath, `${itemId}.webp`);
   await mkdir(cachePath, { recursive: true });
   try {
-    await sharp(coverPath).rotate().resize({ width: 360, height: 540, fit: "cover" }).webp({ quality: 78 }).toFile(cachedPath);
+    await sharp(coverPath).rotate().resize({ width: coverWidth, height: coverHeight, fit: "cover" }).webp({ quality: coverQuality }).toFile(cachedPath);
     return cachedPath;
   } catch {
     const fallbackPath = join(cachePath, `${itemId}.jpg`);
@@ -313,10 +452,24 @@ async function cacheCoverIfEnabled(itemId: string, coverPath: string | null): Pr
     if (image.isEmpty()) {
       return coverPath;
     }
-    const thumbnail = image.resize({ width: 360, height: 540, quality: "good" });
-    await writeFile(fallbackPath, thumbnail.toJPEG(82));
+    const thumbnail = image.resize({ width: coverWidth, height: coverHeight, quality: coverQuality >= 72 ? "good" : "better" });
+    await writeFile(fallbackPath, thumbnail.toJPEG(coverQuality));
     return fallbackPath;
   }
+}
+
+async function firstUsableCoverPath(itemId: string, pagePaths: string[]): Promise<string | null> {
+  for (const pagePath of pagePaths) {
+    if (!existsSync(pagePath)) continue;
+    try {
+      const cached = await cacheCoverIfEnabled(itemId, pagePath);
+      if (cached && existsSync(cached)) return cached;
+      if (cached) return cached;
+    } catch {
+      continue;
+    }
+  }
+  return null;
 }
 
 async function rebuildCoverCache(items: LibraryItem[]): Promise<LibraryItem[]> {
@@ -381,13 +534,18 @@ async function readSettings(): Promise<AppSettings> {
       internalPlayerCategories: data.internalPlayerCategories ?? [],
       internalDocumentKinds: data.internalDocumentKinds ?? [],
       detectedPlayers: await detectPlayers(),
-      language: data.language ?? "zh",
+      language: data.language ?? languageFromLocale(app.getLocale()),
       coverCacheEnabled: data.coverCacheEnabled ?? false,
       coverCacheDirectory: data.coverCacheDirectory ?? null,
       archiveDirectory: data.archiveDirectory ?? null,
       scannedArchiveDirectories: data.scannedArchiveDirectories ?? [],
       highPerformanceMode: data.highPerformanceMode ?? false,
-      rememberProgressEnabled: data.rememberProgressEnabled ?? true
+      rememberProgressEnabled: data.rememberProgressEnabled ?? true,
+      performance: {
+        ...defaultPerformanceSettings,
+        ...(data.performance ?? {}),
+        preset: data.performance?.preset ?? (data.highPerformanceMode ? "high" : defaultPerformanceSettings.preset)
+      }
     };
   } catch {
     return {
@@ -396,13 +554,14 @@ async function readSettings(): Promise<AppSettings> {
       internalPlayerCategories: [],
       internalDocumentKinds: [],
       detectedPlayers: await detectPlayers(),
-      language: "zh",
+      language: languageFromLocale(app.getLocale()),
       coverCacheEnabled: false,
       coverCacheDirectory: null,
       archiveDirectory: null,
       scannedArchiveDirectories: [],
       highPerformanceMode: false,
-      rememberProgressEnabled: true
+      rememberProgressEnabled: true,
+      performance: defaultPerformanceSettings
     };
   }
 }
@@ -495,22 +654,39 @@ async function snapshot(items: LibraryItem[]): Promise<LibrarySnapshot> {
 
 async function findFilesInFolder(folderPath: string): Promise<string[]> {
   const result: string[] = [];
+  const pending = [folderPath];
+  let nextIndex = 0;
+  let steps = 0;
+  const workers = scanConcurrency();
 
-  async function walk(currentPath: string): Promise<void> {
-    const entries = await readdir(currentPath, { withFileTypes: true });
-    await Promise.all(
-      entries.map(async (entry) => {
-        const entryPath = join(currentPath, entry.name);
-        if (entry.isDirectory()) {
-          await walk(entryPath);
-        } else if (entry.isFile()) {
-          result.push(entryPath);
-        }
-      })
-    );
+  async function readDirectory(currentPath: string): Promise<void> {
+    let entries: Dirent[];
+    try {
+      entries = await readdir(currentPath, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const entryPath = join(currentPath, entry.name);
+      if (entry.isDirectory()) {
+        pending.push(entryPath);
+      } else if (entry.isFile()) {
+        result.push(entryPath);
+      }
+    }
+    steps += 1;
+    await throttleBackgroundScan(steps);
   }
 
-  await walk(folderPath);
+  await Promise.all(
+    Array.from({ length: workers }, async () => {
+      while (nextIndex < pending.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        await readDirectory(pending[index]);
+      }
+    })
+  );
   return result.sort(naturalCompare);
 }
 
@@ -524,7 +700,7 @@ async function createComicFolderItem(folderPath: string, existing: LibraryItem |
 
   const timestamp = now();
   const id = hash(`folder:${absolutePath}`);
-  const coverPath = await cacheCoverIfEnabled(id, pagePaths[0]);
+  const coverPath = await firstUsableCoverPath(id, pagePaths);
   return {
     id,
     title: titleFromPath(absolutePath),
@@ -548,7 +724,7 @@ async function createComicFolderItem(folderPath: string, existing: LibraryItem |
   };
 }
 
-function createComicItemFromPages(folderPath: string, pagePaths: string[], existing: LibraryItem | undefined): LibraryItem | null {
+async function createComicItemFromPages(folderPath: string, pagePaths: string[], existing: LibraryItem | undefined): Promise<LibraryItem | null> {
   const absolutePath = resolve(folderPath);
   const sortedPages = [...pagePaths].sort(naturalCompare);
   if (sortedPages.length === 0) {
@@ -557,7 +733,7 @@ function createComicItemFromPages(folderPath: string, pagePaths: string[], exist
 
   const timestamp = now();
   const id = hash(`folder:${absolutePath}:loose-images`);
-  const coverPath = sortedPages[0];
+  const coverPath = await firstUsableCoverPath(id, sortedPages);
   return {
     id,
     title: titleFromPath(absolutePath),
@@ -586,7 +762,7 @@ async function createFileItem(filePath: string, existing: LibraryItem | undefine
   const timestamp = now();
   const file = toLibraryFile(absolutePath);
   const id = hash(`file:${absolutePath}`);
-  const coverPath = file.category === "image" ? await cacheCoverIfEnabled(id, absolutePath) : null;
+  const coverPath = file.category === "image" ? await firstUsableCoverPath(id, [absolutePath]) : null;
 
   return {
     id,
@@ -647,7 +823,13 @@ async function createArchiveItem(archivePath: string, existing: LibraryItem | un
   const archiveStat = await stat(absolutePath);
   const id = hash(`archive:${absolutePath}:${archiveStat.mtimeMs}`);
   const outputDir = join(importCachePath(), id);
-  const zip = await JSZip.loadAsync(await readFile(absolutePath));
+  let zip: JSZip;
+  try {
+    zip = await JSZip.loadAsync(await readFile(absolutePath));
+  } catch (error) {
+    await logScanSkip(absolutePath, error);
+    return createFileItem(absolutePath, existing);
+  }
   const imageEntries = Object.values(zip.files)
     .filter((entry) => !entry.dir && isImage(entry.name))
     .sort((a, b) => naturalCompare(a.name, b.name));
@@ -669,7 +851,7 @@ async function createArchiveItem(archivePath: string, existing: LibraryItem | un
   }
 
   const timestamp = now();
-  const coverPath = await cacheCoverIfEnabled(id, pagePaths[0]);
+  const coverPath = await firstUsableCoverPath(id, pagePaths);
   return {
     id,
     title: titleFromPath(absolutePath),
@@ -693,9 +875,31 @@ async function createArchiveItem(archivePath: string, existing: LibraryItem | un
   };
 }
 
+async function safeCreateItem<T extends LibraryItem | null>(targetPath: string, creator: () => Promise<T>): Promise<T | null> {
+  try {
+    return await creator();
+  } catch (error) {
+    await logScanSkip(targetPath, error);
+    return null;
+  }
+}
+
+function createItemForFile(filePath: string, currentById: Map<string, LibraryItem>, existingItems: LibraryItem[]): Promise<LibraryItem | null> {
+  const absolutePath = resolve(filePath);
+  if (isArchive(absolutePath)) {
+    return safeCreateItem(absolutePath, () => createArchiveItem(absolutePath, existingItems.find((item) => item.sourcePath === absolutePath)));
+  }
+  return safeCreateItem(absolutePath, () => createFileItem(absolutePath, currentById.get(hash(`file:${absolutePath}`))));
+}
+
 async function createItemsFromFolder(rootPath: string, existingItems: LibraryItem[]): Promise<Array<LibraryItem | null>> {
   const absoluteRoot = resolve(rootPath);
-  const entries = await readdir(absoluteRoot, { withFileTypes: true });
+  let entries: Dirent[];
+  try {
+    entries = await readdir(absoluteRoot, { withFileTypes: true });
+  } catch {
+    return [];
+  }
   const hasDirectories = entries.some((entry) => entry.isDirectory());
   const currentById = new Map(existingItems.map((item) => [item.id, item]));
   const result: Array<LibraryItem | null> = [];
@@ -703,20 +907,22 @@ async function createItemsFromFolder(rootPath: string, existingItems: LibraryIte
   for (const entry of entries) {
     const entryPath = join(absoluteRoot, entry.name);
     if (entry.isDirectory()) {
+      const directStats = await directoryEntryStats(entryPath);
       const files = await findFilesInFolder(entryPath);
       const imageCount = files.filter(isImage).length;
       const videoCount = files.filter(isVideo).length;
-      if (videoCount >= 2 && videoCount >= files.length * 0.5) {
-        result.push(await createSeriesFolderItem(entryPath, currentById.get(hash(`series:${resolve(entryPath)}`))));
+      const directNonImages = directStats.files - directStats.images;
+      const shouldSplitNestedFolder =
+        directStats.directories > 0 && (directStats.videos > 0 || directNonImages > 0 || (directStats.files === 0 && directStats.directories >= 3));
+      if (shouldSplitNestedFolder) {
+        result.push(...(await createItemsFromFolder(entryPath, existingItems)));
+      } else if (videoCount >= 2 && videoCount >= files.length * 0.5) {
+        result.push(await safeCreateItem(entryPath, () => createSeriesFolderItem(entryPath, currentById.get(hash(`series:${resolve(entryPath)}`)))));
       } else if (imageCount >= Math.max(2, files.length * 0.5)) {
-        result.push(await createComicFolderItem(entryPath, currentById.get(hash(`folder:${resolve(entryPath)}`))));
+        result.push(await safeCreateItem(entryPath, () => createComicFolderItem(entryPath, currentById.get(hash(`folder:${resolve(entryPath)}`)))));
       } else {
         for (const filePath of files) {
-          if (isArchive(filePath)) {
-            result.push(await createArchiveItem(filePath, existingItems.find((item) => item.sourcePath === resolve(filePath))));
-          } else {
-            result.push(await createFileItem(filePath, currentById.get(hash(`file:${resolve(filePath)}`))));
-          }
+          result.push(await createItemForFile(filePath, currentById, existingItems));
         }
       }
     } else if (entry.isFile()) {
@@ -726,62 +932,52 @@ async function createItemsFromFolder(rootPath: string, existingItems: LibraryIte
 
   const rootImages = looseFiles.filter(isImage);
   if (!hasDirectories && rootImages.length >= 2 && rootImages.length >= looseFiles.length * 0.5) {
-    result.push(createComicItemFromPages(absoluteRoot, rootImages, currentById.get(hash(`folder:${absoluteRoot}:loose-images`))));
+    result.push(await safeCreateItem(absoluteRoot, () => createComicItemFromPages(absoluteRoot, rootImages, currentById.get(hash(`folder:${absoluteRoot}:loose-images`)))));
   } else {
     for (const filePath of looseFiles) {
-      if (isArchive(filePath)) {
-        result.push(await createArchiveItem(filePath, existingItems.find((item) => item.sourcePath === resolve(filePath))));
-      } else {
-        result.push(await createFileItem(filePath, currentById.get(hash(`file:${resolve(filePath)}`))));
-      }
+      result.push(await createItemForFile(filePath, currentById, existingItems));
     }
   }
 
   return result;
 }
 
+async function createFileItemsFromFolder(rootPath: string, existingItems: LibraryItem[]): Promise<Array<LibraryItem | null>> {
+  const currentById = new Map(existingItems.map((item) => [item.id, item]));
+  const files = await findFilesInFolder(rootPath);
+  return mapWithConcurrency(
+    files,
+    scanConcurrency(),
+    async (filePath) => createItemForFile(filePath, currentById, existingItems)
+  );
+}
+
+async function createItemsFromArchiveCategory(
+  archiveRoot: string,
+  category: LibraryCategory,
+  existingItems: LibraryItem[]
+): Promise<Array<LibraryItem | null>> {
+  const categoryPath = join(archiveRoot, categoryFolders[category]);
+  if (!existsSync(categoryPath)) return [];
+  if (category === "comic" || category === "series" || category === "video") {
+    return createItemsFromFolder(categoryPath, existingItems);
+  }
+  return createFileItemsFromFolder(categoryPath, existingItems);
+}
+
 async function createItemsFromArchiveDirectory(rootPath: string, existingItems: LibraryItem[]): Promise<Array<LibraryItem | null>> {
   const absoluteRoot = resolve(rootPath);
-  const currentById = new Map(existingItems.map((item) => [item.id, item]));
   const result: Array<LibraryItem | null> = [];
 
   for (const category of categoryKeysForArchive()) {
-    const categoryPath = join(absoluteRoot, categoryFolders[category]);
-    if (!existsSync(categoryPath)) continue;
-
-    if (category === "comic") {
-      result.push(...(await createItemsFromFolder(categoryPath, existingItems)));
-      continue;
-    }
-
-    const files = await findFilesInFolder(categoryPath);
-    if (category === "series") {
-      const entries = await readdir(categoryPath, { withFileTypes: true });
-      for (const entry of entries) {
-        const entryPath = join(categoryPath, entry.name);
-        if (entry.isDirectory()) {
-          result.push(await createSeriesFolderItem(entryPath, currentById.get(hash(`series:${resolve(entryPath)}`))));
-        } else if (entry.isFile()) {
-          result.push(await createFileItem(entryPath, currentById.get(hash(`file:${resolve(entryPath)}`))));
-        }
-      }
-      continue;
-    }
-
-    for (const filePath of files) {
-      if (isArchive(filePath)) {
-        result.push(await createArchiveItem(filePath, existingItems.find((item) => item.sourcePath === resolve(filePath))));
-      } else {
-        result.push(await createFileItem(filePath, currentById.get(hash(`file:${resolve(filePath)}`))));
-      }
-    }
+    result.push(...(await createItemsFromArchiveCategory(absoluteRoot, category, existingItems)));
   }
 
   return result;
 }
 
 function categoryKeysForArchive(): LibraryCategory[] {
-  return ["comic", "image", "text", "audio", "video", "series", "archive", "other"];
+  return ["text", "audio", "video", "series", "archive", "image", "other", "comic"];
 }
 
 async function directoryHasEntries(folderPath: string): Promise<boolean> {
@@ -826,7 +1022,20 @@ async function syncArchiveDirectory(): Promise<LibraryItem[]> {
   }
 
   const archivePath = resolve(settings.archiveDirectory);
-  if (settings.scannedArchiveDirectories.map((entry) => resolve(entry)).includes(archivePath)) {
+  const current = await readLibrary();
+  const hasArchiveItems = current.some((item) => isInsidePath(archivePath, item.sourcePath));
+  const suspiciousNestedArchiveItemIds = new Set<string>();
+  for (const item of current) {
+    if (item.category !== "comic" || item.sourceType !== "folder" || !isInsidePath(archivePath, item.sourcePath)) continue;
+    if (!item.files.some((file) => dirname(file.path) !== item.sourcePath)) continue;
+    const stats = await directoryEntryStats(item.sourcePath);
+    const directNonImages = stats.files - stats.images;
+    if (stats.directories > 0 && (stats.videos > 0 || directNonImages > 0)) {
+      suspiciousNestedArchiveItemIds.add(item.id);
+    }
+  }
+  const hasSuspiciousNestedArchiveItems = suspiciousNestedArchiveItemIds.size > 0;
+  if (settings.scannedArchiveDirectories.map((entry) => resolve(entry)).includes(archivePath) && hasArchiveItems && !hasSuspiciousNestedArchiveItems) {
     return readLibrary();
   }
 
@@ -834,16 +1043,28 @@ async function syncArchiveDirectory(): Promise<LibraryItem[]> {
     return readLibrary();
   }
 
-  const current = await readLibrary();
   activeImportStartedAt = Date.now();
-  emitImportProgress({ phase: "scanning", current: 0, total: 1, message: `Scanning archive folder ${basename(archivePath)}` });
-  const imports = await createItemsFromArchiveDirectory(archivePath, current);
-  emitImportProgress({ phase: "saving", current: 1, total: 1, message: "Saving archive library" });
+  const categories = categoryKeysForArchive().filter((category) => existsSync(join(archivePath, categoryFolders[category])));
   const byId = new Map(current.map((item) => [item.id, item]));
-  for (const item of imports) {
-    if (item) {
-      byId.set(item.id, item);
+  if (hasSuspiciousNestedArchiveItems) {
+    for (const itemId of suspiciousNestedArchiveItemIds) byId.delete(itemId);
+  }
+  for (let index = 0; index < categories.length; index += 1) {
+    const category = categories[index];
+    emitImportProgress({
+      phase: "importing",
+      current: index,
+      total: categories.length,
+      message: `Scanning ${categoryFolders[category]} in ${basename(archivePath)}`
+    });
+    const imports = await createItemsFromArchiveCategory(archivePath, category, current);
+    for (const item of imports) {
+      if (item) {
+        byId.set(item.id, item);
+      }
     }
+    await writeLibrary([...byId.values()]);
+    emitLibraryChanged();
   }
   const items = [...byId.values()];
   await writeLibrary(items);
@@ -851,6 +1072,22 @@ async function syncArchiveDirectory(): Promise<LibraryItem[]> {
   await writeSettings(settings);
   emitImportProgress({ phase: "done", current: 1, total: 1, message: "Done" });
   return items;
+}
+
+function startArchiveSyncInBackground(): void {
+  if (archiveSyncPromise) return;
+  archiveSyncPromise = syncArchiveDirectory()
+    .then((items) => {
+      emitLibraryChanged();
+      return items;
+    })
+    .catch(async (error) => {
+      await logScanSkip("archive-sync", error);
+      return readLibrary();
+    })
+    .finally(() => {
+      archiveSyncPromise = null;
+    });
 }
 
 async function openWithPlayer(item: LibraryItem): Promise<boolean> {
@@ -1351,7 +1588,13 @@ function createWindow(): void {
     if (isQuitting) return;
     event.preventDefault();
     mainWindow?.hide();
+    configureResourceMode();
   });
+  mainWindow.on("show", configureResourceMode);
+  mainWindow.on("restore", configureResourceMode);
+  mainWindow.on("focus", configureResourceMode);
+  mainWindow.on("hide", configureResourceMode);
+  mainWindow.on("minimize", configureResourceMode);
 
   if (process.env.ELECTRON_RENDERER_URL) {
     void mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
@@ -1377,7 +1620,14 @@ app.whenReady().then(() => {
 
   app.on("browser-window-created", (_, window) => optimizer.watchWindowShortcuts(window));
 
-  ipcMain.handle("library:get", async () => snapshot(await readLibrary()));
+  ipcMain.handle("library:get", async () => {
+    const settings = await readSettings();
+    const items = await readLibrary();
+    if (settings.archiveDirectory && existsSync(settings.archiveDirectory) && items.length === 0 && (await directoryHasEntries(settings.archiveDirectory))) {
+      startArchiveSyncInBackground();
+    }
+    return snapshot(items);
+  });
 
   ipcMain.handle("library:import-folders", async () => {
     const selection = await dialog.showOpenDialog(mainWindow!, {
@@ -1578,6 +1828,10 @@ app.whenReady().then(() => {
     mainWindow?.setFullScreen(enabled);
   });
 
+  ipcMain.handle("app:release-idle-memory", async () => {
+    await releaseIdleMemory();
+  });
+
   ipcMain.handle("app:open-reference-image", async (_, filePath: string, title: string) => {
     createReferenceWindow(filePath, title);
   });
@@ -1698,8 +1952,9 @@ app.whenReady().then(() => {
     if (!selection.canceled && selection.filePaths[0]) {
       settings.archiveDirectory = resolve(selection.filePaths[0]);
       await writeSettings(settings);
+      startArchiveSyncInBackground();
     }
-    return snapshot(await syncArchiveDirectory());
+    return snapshot(await readLibrary());
   });
 
   ipcMain.handle("settings:clear-cover-cache", async () => {
@@ -1720,6 +1975,15 @@ app.whenReady().then(() => {
   ipcMain.handle("settings:set-high-performance", async (_, enabled: boolean) => {
     const settings = await readSettings();
     settings.highPerformanceMode = enabled;
+    settings.performance = {
+      ...settings.performance,
+      preset: enabled ? "high" : "balanced",
+      demandLoadCovers: !enabled,
+      reducedCoverCache: !enabled,
+      staticVideoPreview: false,
+      tightVirtualization: true,
+      idleAutoRelease: !enabled
+    };
     if (enabled) {
       settings.coverCacheEnabled = true;
     }
@@ -1729,6 +1993,27 @@ app.whenReady().then(() => {
       await writeLibrary(items);
     }
     return snapshot(await readLibrary());
+  });
+
+  ipcMain.handle("settings:set-performance", async (_, patch: Partial<PerformanceSettings>) => {
+    const settings = await readSettings();
+    settings.performance = {
+      ...settings.performance,
+      ...patch,
+      idleReleaseMinutes: Math.max(1, Math.min(30, Number(patch.idleReleaseMinutes ?? settings.performance.idleReleaseMinutes))),
+      coverPreviewWidth: Math.max(160, Math.min(720, Number(patch.coverPreviewWidth ?? settings.performance.coverPreviewWidth))),
+      coverPreviewQuality: Math.max(45, Math.min(92, Number(patch.coverPreviewQuality ?? settings.performance.coverPreviewQuality)))
+    };
+    settings.highPerformanceMode = settings.performance.preset === "high" || settings.performance.preset === "extreme";
+    if (settings.highPerformanceMode) {
+      settings.coverCacheEnabled = true;
+    }
+    await writeSettings(settings);
+    return snapshot(await readLibrary());
+  });
+
+  ipcMain.handle("settings:get-system-profile", async () => {
+    return systemProfile();
   });
 
   ipcMain.handle("settings:set-remember-progress", async (_, enabled: boolean) => {

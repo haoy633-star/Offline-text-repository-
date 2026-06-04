@@ -44,14 +44,19 @@ import type {
   LibraryCategory,
   LibraryItem,
   LibrarySnapshot,
-  LibrarySortKey
+  LibrarySortKey,
+  PerformancePreset,
+  PerformanceSettings,
+  SystemProfile
 } from "../../shared/types";
 import "./styles.css";
 import taoImage from "./assets/tao.jpg";
 
+// React 渲染层入口：整个软件的界面、书架、阅读器、设置页基本都在这个文件里。
+// 如果要拆分组件，建议先从 VideoCoverPreview、DocumentCover、SettingToggle 和主 App 里的大段视图开始拆。
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
-type ViewMode = "grid" | "reader" | "viewer" | "help";
+type ViewMode = "grid" | "reader" | "viewer" | "help" | "settings";
 type FilterKey = "all" | "favorite" | LibraryCategory;
 type FitMode = "page" | "width" | "actual";
 type DisplayMode = "paged" | "scroll";
@@ -72,6 +77,191 @@ type EditorDialog =
 const categoryKeys: LibraryCategory[] = ["comic", "image", "text", "audio", "video", "series", "archive", "other"];
 const documentKinds: DocumentKind[] = ["plain", "pdf", "word", "ebook"];
 const gridColumnOptions = [4, 5, 6] as const;
+const appVersion = "v0.32";
+const scrollOverscanRows = 3;
+const defaultPerformanceSettings: PerformanceSettings = {
+  // 性能设置默认值：低配/高性能预设最终也会落到这些字段上。
+  preset: "balanced",
+  lazyLibraryIndex: false,
+  lazyPagePaths: false,
+  demandLoadCovers: true,
+  reducedCoverCache: false,
+  staticVideoPreview: false,
+  readerNearbyPagesOnly: true,
+  tightVirtualization: true,
+  idleAutoRelease: true,
+  idleReleaseMinutes: 5,
+  coverPreviewWidth: 360,
+  coverPreviewQuality: 78
+};
+const idleReleaseOptions = [1, 3, 5, 10, 15, 30] as const;
+const settingsCopy = {
+  zh: {
+    title: "性能与缓存设置",
+    intro: "根据电脑性能选择加载策略。低配模式降低内存和卡顿，高性能模式会更快但更吃内存。",
+    back: "返回资料库",
+    presets: "性能预设",
+    presetsHint: "预设会一次性调整下面的细项，你也可以之后自己微调。",
+    detect: "检测电脑配置",
+    applySettings: "应用设置",
+    settingsSaved: "设置已保存",
+    applyRecommended: "应用推荐预设",
+    detected: "检测结果",
+    cores: "CPU 核心",
+    memory: "内存",
+    recommended: "推荐",
+    presetNames: { low: "极低设备要求", balanced: "平衡", high: "高性能", extreme: "特别高性能" },
+    presetDescriptions: {
+      low: "尽量降低内存和后台占用，适合轻薄本和超大库。会减少预加载，部分内容首次打开会慢一点。",
+      balanced: "默认推荐。保留大部分流畅体验，同时避免一次性加载太多看不见的内容。",
+      high: "适合内存较大的电脑。会增加封面缓存和预加载，浏览更顺，但占用更高。",
+      extreme: "尽量追求速度和顺滑，减少自动释放。适合台式机或内存很宽裕的设备。"
+    },
+    details: "加载与内存细项",
+    lazyLibraryIndex: "库索引轻量化",
+    lazyLibraryIndexDesc: "目标是让主库只保存列表必要信息，减少启动时读入内存的数据。完整底层索引重构会在后续版本继续推进。",
+    lazyLibraryIndexTrade: "减轻：启动内存和大库加载压力。加重：首次打开某些资源时需要临时读取更多文件信息。",
+    lazyPagePaths: "图片路径懒加载",
+    lazyPagePathsDesc: "打开图片集时再读取完整图片路径，而不是启动时把所有页路径都长期放进内存。",
+    lazyPagePathsTrade: "减轻：大库常驻内存。加重：第一次打开大型图片集会多一点读取时间。",
+    demandLoadCovers: "封面按需加载",
+    demandLoadCoversDesc: "只加载当前屏幕附近封面，不主动预读上一页和下一页。",
+    demandLoadCoversTrade: "减轻：图片解码内存和瞬时 IO。加重：快速翻页时封面可能晚一点出现。",
+    reducedCoverCache: "降低封面缓存上限",
+    reducedCoverCacheDesc: "空闲释放时会把封面处理缓存收得更紧，适合内存小的设备。",
+    reducedCoverCacheTrade: "减轻：长期内存占用。加重：重复浏览旧封面时可能重新解码。",
+    coverPixels: "封面缓存像素",
+    coverPixelsHint: "降低封面宽度会减小缓存文件和图片解码内存；提高后封面更清晰，但更吃内存和磁盘。",
+    coverQuality: "封面压缩质量",
+    coverQualityHint: "降低质量会减少缓存体积和加载压力；提高质量会让封面更接近原图。",
+    staticVideoPreview: "关闭视频动态预览，只使用静态封面",
+    staticVideoPreviewDesc: "视频和视频集卡片只显示截帧封面，鼠标悬停不加载视频片段。",
+    staticVideoPreviewTrade: "减轻：视频解码和内存占用。加重：少了悬停动态预览。",
+    readerNearby: "图片集阅读器只保留附近页",
+    readerNearbyDesc: "阅读器尽量只保留当前页附近内容，减少一次打开大图片集后的内存峰值。",
+    readerNearbyTrade: "减轻：阅读器内存峰值。加重：跳很远页时可能多一点加载时间。",
+    tightVirtualization: "大库列表虚拟化收紧",
+    tightVirtualizationDesc: "列表只生成屏幕附近卡片，看不见的卡片不进入页面结构。",
+    tightVirtualizationTrade: "减轻：上万文件时 DOM 和图片压力。加重：极快滚动时需要即时补卡片。",
+    idleAutoRelease: "空闲自动释放",
+    idleAutoReleaseDesc: "用户停止操作一段时间后，暂停预览并释放一部分图片、视频和缓存对象。",
+    idleAutoReleaseTrade: "减轻：长时间开着软件时的常驻内存。加重：再次操作时封面可能重新加载。",
+    idleWait: "空闲释放等待时间",
+    idleWaitHint: "建议轻薄本使用 3-5 分钟，台式机可以调到 10 分钟以上。",
+    minutes: "分钟",
+    cacheProgress: "缓存与进度"
+  },
+  en: {
+    title: "Performance and Cache",
+    intro: "Choose how aggressively the app loads content. Low-end mode lowers memory use; performance modes trade memory for speed.",
+    back: "Back to library",
+    presets: "Performance Presets",
+    presetsHint: "Presets adjust the options below at once. You can still fine tune each option afterward.",
+    detect: "Detect this PC",
+    applySettings: "Apply settings",
+    settingsSaved: "Settings saved",
+    applyRecommended: "Apply recommended preset",
+    detected: "Detected",
+    cores: "CPU cores",
+    memory: "Memory",
+    recommended: "Recommended",
+    presetNames: { low: "Low-end device", balanced: "Balanced", high: "High performance", extreme: "Extreme performance" },
+    presetDescriptions: {
+      low: "Minimizes memory and background load. Good for thin laptops and huge libraries. First opens may be slightly slower.",
+      balanced: "Recommended default. Keeps most smoothness while avoiding too much invisible preloading.",
+      high: "For PCs with more memory. Uses more cover cache and preloading for smoother browsing.",
+      extreme: "Prioritizes speed and smoothness, with less automatic releasing. Best for desktops or roomy RAM."
+    },
+    details: "Loading and Memory",
+    lazyLibraryIndex: "Lightweight library index",
+    lazyLibraryIndexDesc: "Keeps only list-level data in the main library index. Full index migration will continue in a later version.",
+    lazyLibraryIndexTrade: "Reduces startup memory and huge-library pressure. Costs a little more reading when opening some items.",
+    lazyPagePaths: "Lazy-load image paths",
+    lazyPagePathsDesc: "Reads full image paths when opening an image set instead of keeping every page path in memory at startup.",
+    lazyPagePathsTrade: "Reduces resident memory. Opening a very large image set may take a little longer.",
+    demandLoadCovers: "Load covers on demand",
+    demandLoadCoversDesc: "Loads covers near the current screen and avoids preloading adjacent pages.",
+    demandLoadCoversTrade: "Reduces image decode memory and burst IO. Covers may appear slightly later during fast paging.",
+    reducedCoverCache: "Lower cover cache limit",
+    reducedCoverCacheDesc: "Tightens cover-processing cache during idle release, useful on low-memory devices.",
+    reducedCoverCacheTrade: "Reduces long-running memory use. Revisiting old covers may require decoding again.",
+    coverPixels: "Cover cache pixels",
+    coverPixelsHint: "Lower width reduces cache files and image decode memory; higher width looks sharper but uses more memory and disk.",
+    coverQuality: "Cover compression quality",
+    coverQualityHint: "Lower quality reduces cache size and loading pressure; higher quality is closer to the original.",
+    staticVideoPreview: "Disable dynamic video preview",
+    staticVideoPreviewDesc: "Video and series cards only show still covers; hovering does not load video snippets.",
+    staticVideoPreviewTrade: "Reduces video decoding and memory use. Removes animated hover previews.",
+    readerNearby: "Keep nearby reader pages only",
+    readerNearbyDesc: "The image-set reader keeps nearby pages to reduce peak memory after opening large sets.",
+    readerNearbyTrade: "Reduces reader memory peaks. Large jumps may need a little more loading time.",
+    tightVirtualization: "Tighter huge-library virtualization",
+    tightVirtualizationDesc: "Only cards near the screen exist in the page structure.",
+    tightVirtualizationTrade: "Reduces DOM and image pressure for huge libraries. Very fast scrolling may need instant card fill-in.",
+    idleAutoRelease: "Idle auto release",
+    idleAutoReleaseDesc: "After no activity for a while, pauses previews and releases some image, video, and cache objects.",
+    idleAutoReleaseTrade: "Reduces resident memory while the app stays open. Covers may reload on the next interaction.",
+    idleWait: "Idle release wait",
+    idleWaitHint: "Thin laptops usually fit 3-5 minutes; desktops can use 10 minutes or more.",
+    minutes: "min",
+    cacheProgress: "Cache and Progress"
+  },
+  ja: {
+    title: "性能とキャッシュ設定",
+    intro: "PC性能に合わせて読み込み方を選びます。低負荷はメモリを抑え、高性能は速度のためにメモリを多めに使います。",
+    back: "ライブラリへ戻る",
+    presets: "性能プリセット",
+    presetsHint: "プリセットは下の項目をまとめて調整します。あとから個別に変更できます。",
+    detect: "PC構成を検出",
+    applySettings: "設定を適用",
+    settingsSaved: "設定を保存しました",
+    applyRecommended: "推奨プリセットを適用",
+    detected: "検出結果",
+    cores: "CPUコア",
+    memory: "メモリ",
+    recommended: "推奨",
+    presetNames: { low: "低スペック向け", balanced: "バランス", high: "高性能", extreme: "最高性能" },
+    presetDescriptions: {
+      low: "メモリとバックグラウンド負荷を抑えます。薄型ノートや巨大ライブラリ向けです。",
+      balanced: "標準推奨。なめらかさを保ちながら、見えない内容の読み込みすぎを避けます。",
+      high: "メモリに余裕があるPC向け。表紙キャッシュとプリロードを増やして表示を速くします。",
+      extreme: "速度と滑らかさを優先し、自動解放を控えめにします。デスクトップや大容量メモリ向けです。"
+    },
+    details: "読み込みとメモリ",
+    lazyLibraryIndex: "軽量ライブラリ索引",
+    lazyLibraryIndexDesc: "一覧に必要な情報だけを主索引に残す設計です。完全な索引移行は次の段階で進めます。",
+    lazyLibraryIndexTrade: "軽減：起動時メモリと巨大ライブラリ負荷。増加：一部項目を開く時の読み取り。",
+    lazyPagePaths: "画像パスの遅延読み込み",
+    lazyPagePathsDesc: "起動時に全ページパスを持たず、画像集を開く時に読み込みます。",
+    lazyPagePathsTrade: "軽減：常駐メモリ。増加：大きな画像集の初回オープン時間。",
+    demandLoadCovers: "表紙を必要時に読み込む",
+    demandLoadCoversDesc: "画面付近の表紙だけ読み込み、前後ページの先読みを避けます。",
+    demandLoadCoversTrade: "軽減：画像デコードメモリと一時IO。増加：高速ページ移動時の表紙表示待ち。",
+    reducedCoverCache: "表紙キャッシュ上限を下げる",
+    reducedCoverCacheDesc: "空闲解放時に表紙処理キャッシュをより小さくします。",
+    reducedCoverCacheTrade: "軽減：長時間使用時のメモリ。増加：古い表紙の再デコード。",
+    coverPixels: "表紙キャッシュ解像度",
+    coverPixelsHint: "幅を下げるとキャッシュとデコードメモリが減ります。上げると鮮明ですがメモリと容量を使います。",
+    coverQuality: "表紙圧縮品質",
+    coverQualityHint: "品質を下げると軽くなり、上げると元画像に近づきます。",
+    staticVideoPreview: "動画の動的プレビューを無効化",
+    staticVideoPreviewDesc: "動画とシリーズカードは静止画表紙のみ表示し、ホバー時に動画片を読み込みません。",
+    staticVideoPreviewTrade: "軽減：動画デコードとメモリ。増加：ホバー動画プレビューなし。",
+    readerNearby: "リーダーは近くのページだけ保持",
+    readerNearbyDesc: "大きな画像集を開いた時のピークメモリを抑えます。",
+    readerNearbyTrade: "軽減：リーダーメモリ。増加：遠いページへ飛ぶ時の読み込み。",
+    tightVirtualization: "巨大ライブラリの仮想化を強める",
+    tightVirtualizationDesc: "画面付近のカードだけをページ構造に作ります。",
+    tightVirtualizationTrade: "軽減：DOMと画像負荷。増加：高速スクロール時の補充処理。",
+    idleAutoRelease: "空闲時に自動解放",
+    idleAutoReleaseDesc: "一定時間操作がないとプレビューを停止し、一部の画像・動画・キャッシュを解放します。",
+    idleAutoReleaseTrade: "軽減：常駐メモリ。増加：次回操作時に表紙を再読み込みする場合があります。",
+    idleWait: "空闲解放までの待ち時間",
+    idleWaitHint: "薄型ノートは3-5分、デスクトップは10分以上がおすすめです。",
+    minutes: "分",
+    cacheProgress: "キャッシュと進捗"
+  }
+} as const;
 const defaultTextTheme: TextTheme = {
   fontSize: 18,
   lineHeight: 1.8,
@@ -656,7 +846,8 @@ function defaultSnapshot(): LibrarySnapshot {
       archiveDirectory: null,
       scannedArchiveDirectories: [],
       highPerformanceMode: false,
-      rememberProgressEnabled: true
+      rememberProgressEnabled: true,
+      performance: defaultPerformanceSettings
     }
   };
 }
@@ -725,7 +916,7 @@ function previewVideoPath(item: LibraryItem): string | null {
   return null;
 }
 
-function VideoCoverPreview({ item }: { item: LibraryItem }): JSX.Element {
+function VideoCoverPreview({ item, idle = false, staticOnly = false }: { item: LibraryItem; idle?: boolean; staticOnly?: boolean }): JSX.Element {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [hovered, setHovered] = useState(false);
   const sourcePath = previewVideoPath(item);
@@ -762,14 +953,18 @@ function VideoCoverPreview({ item }: { item: LibraryItem }): JSX.Element {
 
   return (
     <div className="video-preview-shell" onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
-      {item.videoCoverPath ? (
+      {idle ? (
+        <div className="missing-cover video-cover idle-cover">
+          <Video size={38} />
+        </div>
+      ) : item.videoCoverPath ? (
         <img src={window.comicShelf.assetUrl(item.videoCoverPath)} alt={item.title} loading="lazy" />
       ) : (
         <div className="missing-cover video-cover">
           <Video size={38} />
         </div>
       )}
-      {hovered && (
+      {hovered && !idle && !staticOnly && (
         <video
           ref={videoRef}
           className="cover-video"
@@ -785,6 +980,31 @@ function VideoCoverPreview({ item }: { item: LibraryItem }): JSX.Element {
         />
       )}
     </div>
+  );
+}
+
+function SettingToggle({
+  checked,
+  title,
+  description,
+  tradeoff,
+  onChange
+}: {
+  checked: boolean;
+  title: string;
+  description: string;
+  tradeoff: string;
+  onChange: (checked: boolean) => void;
+}): JSX.Element {
+  return (
+    <label className="setting-toggle">
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+      <span className="setting-toggle-body">
+        <strong>{title}</strong>
+        <small>{description}</small>
+        <em>{tradeoff}</em>
+      </span>
+    </label>
   );
 }
 
@@ -1134,13 +1354,25 @@ function App(): JSX.Element {
   const [editorMode, setEditorMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showGithubCard, setShowGithubCard] = useState(false);
+  const [isTrayIdle, setIsTrayIdle] = useState(false);
+  const [isMemoryIdle, setIsMemoryIdle] = useState(false);
+  const [systemProfile, setSystemProfile] = useState<SystemProfile | null>(null);
+  const [gridScrollTop, setGridScrollTop] = useState(0);
+  const [gridViewportHeight, setGridViewportHeight] = useState(900);
+  const [gridViewportWidth, setGridViewportWidth] = useState(1200);
   const gridRef = useRef<HTMLDivElement | null>(null);
   const documentScrollRef = useRef<HTMLDivElement | null>(null);
   const readingSaveTimer = useRef<number | null>(null);
+  const pendingHiddenRefresh = useRef(false);
+  const idleReleaseTimer = useRef<number | null>(null);
+  const savedShelfScrollTop = useRef(0);
+  const shouldRestoreShelfScroll = useRef(false);
   const [, setProgressTick] = useState(0);
 
   const lang: AppLanguage = snapshot.settings.language ?? "zh";
   const t = localizedCopy[lang];
+  const st = settingsCopy[lang];
+  const performanceSettings: PerformanceSettings = { ...defaultPerformanceSettings, ...(snapshot.settings.performance ?? {}) };
   const [notice, setNotice] = useState(copy.zh.importHint);
   const deferredQuery = useDeferredValue(query);
 
@@ -1176,17 +1408,37 @@ function App(): JSX.Element {
     return [...new Set(snapshot.items.flatMap((item) => item.tags))].sort((a, b) => a.localeCompare(b));
   }, [snapshot.items]);
 
-  const rowsPerPage = displayMode === "paged" ? 3 : snapshot.settings.highPerformanceMode ? 5 : 6;
+  const rowsPerPage = displayMode === "paged" ? 3 : performanceSettings.preset === "extreme" || snapshot.settings.highPerformanceMode ? 5 : 6;
   const pageSize = gridColumns * rowsPerPage;
   const pageCount = displayMode === "paged" ? Math.max(1, Math.ceil(filteredItems.length / pageSize)) : 1;
+  const scrollCardWidth = Math.max(160, (gridViewportWidth - 56 - 22 * (gridColumns - 1)) / gridColumns);
+  const scrollRowHeight = Math.max(370, Math.round(scrollCardWidth * 1.5 + 150));
+  const scrollRowCount = Math.ceil(filteredItems.length / gridColumns);
+  const scrollStartRow =
+    displayMode === "scroll"
+      ? Math.max(0, Math.floor(Math.max(0, gridScrollTop - 28) / scrollRowHeight) - (performanceSettings.tightVirtualization ? scrollOverscanRows : 8))
+      : 0;
+  const scrollEndRow =
+    displayMode === "scroll"
+      ? Math.min(
+          scrollRowCount,
+          Math.ceil((Math.max(0, gridScrollTop - 28) + gridViewportHeight) / scrollRowHeight) +
+            (performanceSettings.tightVirtualization ? scrollOverscanRows : 8)
+        )
+      : 0;
+  const scrollTopSpacer = displayMode === "scroll" ? scrollStartRow * scrollRowHeight : 0;
+  const scrollBottomSpacer = displayMode === "scroll" ? Math.max(0, (scrollRowCount - scrollEndRow) * scrollRowHeight) : 0;
   const visibleItems = useMemo(() => {
-    if (displayMode === "scroll") return filteredItems;
+    if (isTrayIdle) return [];
+    if (displayMode === "scroll") return filteredItems.slice(scrollStartRow * gridColumns, scrollEndRow * gridColumns);
     const safePage = Math.min(page, pageCount);
     const start = (safePage - 1) * pageSize;
     return filteredItems.slice(start, start + pageSize);
-  }, [displayMode, filteredItems, page, pageCount, pageSize]);
+  }, [displayMode, filteredItems, gridColumns, isTrayIdle, page, pageCount, pageSize, scrollEndRow, scrollStartRow]);
 
   useEffect(() => {
+    if (isTrayIdle) return;
+    if (performanceSettings.demandLoadCovers) return;
     if (displayMode !== "paged") return;
     const nextStart = page * pageSize;
     const previousStart = Math.max(0, (page - 2) * pageSize);
@@ -1196,11 +1448,49 @@ function App(): JSX.Element {
       const image = new Image();
       image.src = window.comicShelf.assetUrl(item.coverPath);
     }
-  }, [displayMode, filteredItems, page, pageSize]);
+  }, [displayMode, filteredItems, isTrayIdle, page, pageSize, performanceSettings.demandLoadCovers]);
 
   useEffect(() => {
     setPage(1);
+    setGridScrollTop(0);
+    savedShelfScrollTop.current = 0;
+    shouldRestoreShelfScroll.current = false;
+    gridRef.current?.scrollTo({ top: 0 });
   }, [displayMode, filter, gridColumns, query, sortKey, tagFilter]);
+
+  useEffect(() => {
+    if (viewMode !== "grid" || displayMode !== "scroll" || !shouldRestoreShelfScroll.current) return;
+    const targetTop = savedShelfScrollTop.current;
+    const restore = (): void => {
+      const grid = gridRef.current;
+      if (!grid) return;
+      grid.scrollTop = targetTop;
+      setGridScrollTop(targetTop);
+    };
+    restore();
+    const frame = window.requestAnimationFrame(restore);
+    const timer = window.setTimeout(() => {
+      restore();
+      shouldRestoreShelfScroll.current = false;
+    }, 80);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [displayMode, filteredItems.length, viewMode]);
+
+  useEffect(() => {
+    const grid = gridRef.current;
+    if (!grid) return;
+    const updateGridMetrics = (): void => {
+      setGridViewportHeight(grid.clientHeight || 900);
+      setGridViewportWidth(grid.clientWidth || 1200);
+    };
+    updateGridMetrics();
+    const observer = new ResizeObserver(updateGridMetrics);
+    observer.observe(grid);
+    return () => observer.disconnect();
+  }, [displayMode, viewMode]);
 
   useEffect(() => {
     const existingIds = new Set(snapshot.items.map((item) => item.id));
@@ -1237,9 +1527,91 @@ function App(): JSX.Element {
   }, []);
 
   useEffect(() => {
+    return window.comicShelf.onBackgroundMode((enabled) => {
+      setIsTrayIdle(enabled);
+      document.body.classList.toggle("tray-idle", enabled);
+      if (enabled) {
+        document.querySelectorAll("video, audio").forEach((element) => {
+          if (element instanceof HTMLMediaElement) {
+            element.pause();
+          }
+        });
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    const releaseAfterIdle = (): void => {
+      if (viewMode === "grid") {
+        setIsMemoryIdle(true);
+      }
+      document.querySelectorAll("video, audio").forEach((element) => {
+        if (element instanceof HTMLMediaElement) {
+          element.pause();
+          element.removeAttribute("src");
+          element.load();
+        }
+      });
+      void window.comicShelf.releaseIdleMemory();
+      if (typeof (window as Window & { gc?: () => void }).gc === "function") {
+        (window as Window & { gc: () => void }).gc();
+      }
+    };
+
+    const resetIdleTimer = (): void => {
+      if (!performanceSettings.idleAutoRelease) return;
+      if (idleReleaseTimer.current !== null) {
+        window.clearTimeout(idleReleaseTimer.current);
+      }
+      setIsMemoryIdle(false);
+      idleReleaseTimer.current = window.setTimeout(releaseAfterIdle, Math.max(1, performanceSettings.idleReleaseMinutes) * 60_000);
+    };
+
+    if (performanceSettings.idleAutoRelease) {
+      resetIdleTimer();
+    }
+    const events: Array<keyof WindowEventMap> = ["mousemove", "mousedown", "keydown", "wheel", "scroll", "touchstart"];
+    for (const eventName of events) {
+      window.addEventListener(eventName, resetIdleTimer, { passive: true });
+    }
+    return () => {
+      if (idleReleaseTimer.current !== null) {
+        window.clearTimeout(idleReleaseTimer.current);
+      }
+      for (const eventName of events) {
+        window.removeEventListener(eventName, resetIdleTimer);
+      }
+    };
+  }, [performanceSettings.idleAutoRelease, performanceSettings.idleReleaseMinutes, viewMode]);
+
+  useEffect(() => {
     return window.comicShelf.onImportProgress((progress) => {
       setImportProgress(progress.phase === "done" ? null : progress);
     });
+  }, []);
+
+  useEffect(() => {
+    return window.comicShelf.onLibraryChanged(() => {
+      if (document.hidden) {
+        pendingHiddenRefresh.current = true;
+        return;
+      }
+      void refreshLibrary();
+    });
+  }, []);
+
+  useEffect(() => {
+    const onVisibilityChange = (): void => {
+      if (document.hidden || !pendingHiddenRefresh.current) return;
+      pendingHiddenRefresh.current = false;
+      void refreshLibrary();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("focus", onVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("focus", onVisibilityChange);
+    };
   }, []);
 
   useEffect(() => {
@@ -1441,6 +1813,10 @@ function App(): JSX.Element {
   }
 
   async function openItem(item: LibraryItem): Promise<void> {
+    if (displayMode === "scroll" && gridRef.current) {
+      savedShelfScrollTop.current = gridRef.current.scrollTop;
+      shouldRestoreShelfScroll.current = true;
+    }
     setSelectedItemId(item.id);
     setSelectedEpisodePath(previewVideoPath(item));
     if ((item.category === "comic" || item.category === "image") && item.pageCount > 0) {
@@ -1561,6 +1937,14 @@ function App(): JSX.Element {
     const nextPage = Math.max(1, Math.min(pdfPageCount, pdfPage + delta));
     setPdfPage(nextPage);
     setPdfPageDraft(String(nextPage));
+  }
+
+  function scrollPagedStage(event: React.WheelEvent, selector: string): void {
+    const stage = document.querySelector(selector) as HTMLElement | null;
+    if (!stage) return;
+    event.preventDefault();
+    event.stopPropagation();
+    stage.scrollBy({ left: event.deltaX, top: event.deltaY, behavior: "auto" });
   }
 
   function printPdf(): void {
@@ -1790,16 +2174,88 @@ function App(): JSX.Element {
     }
   }
 
+  function presetSettings(preset: PerformancePreset): PerformanceSettings {
+    if (preset === "low") {
+      return {
+        ...defaultPerformanceSettings,
+        preset,
+        lazyLibraryIndex: true,
+        lazyPagePaths: true,
+        demandLoadCovers: true,
+        reducedCoverCache: true,
+        staticVideoPreview: true,
+        readerNearbyPagesOnly: true,
+        tightVirtualization: true,
+        idleAutoRelease: true,
+        idleReleaseMinutes: 3,
+        coverPreviewWidth: 240,
+        coverPreviewQuality: 62
+      };
+    }
+    if (preset === "high") {
+      return {
+        ...defaultPerformanceSettings,
+        preset,
+        demandLoadCovers: false,
+        reducedCoverCache: false,
+        staticVideoPreview: false,
+        readerNearbyPagesOnly: false,
+        tightVirtualization: true,
+        idleAutoRelease: true,
+        idleReleaseMinutes: 5,
+        coverPreviewWidth: 420,
+        coverPreviewQuality: 82
+      };
+    }
+    if (preset === "extreme") {
+      return {
+        ...defaultPerformanceSettings,
+        preset,
+        demandLoadCovers: false,
+        reducedCoverCache: false,
+        staticVideoPreview: false,
+        readerNearbyPagesOnly: false,
+        tightVirtualization: false,
+        idleAutoRelease: false,
+        idleReleaseMinutes: 10,
+        coverPreviewWidth: 540,
+        coverPreviewQuality: 88
+      };
+    }
+    return { ...defaultPerformanceSettings, preset };
+  }
+
+  async function updatePerformanceSettings(patch: Partial<PerformanceSettings>): Promise<void> {
+    const next = await window.comicShelf.setPerformance(patch);
+    setSnapshot(next);
+  }
+
+  async function applyPerformancePreset(preset: PerformancePreset): Promise<void> {
+    await updatePerformanceSettings(presetSettings(preset));
+  }
+
+  async function detectSystemProfile(): Promise<void> {
+    const profile = await window.comicShelf.getSystemProfile();
+    setSystemProfile(profile);
+  }
+
+  async function applyCurrentSettings(): Promise<void> {
+    await updatePerformanceSettings(performanceSettings);
+    setNotice(st.settingsSaved);
+  }
+
   async function toggleRememberProgress(): Promise<void> {
     const next = await window.comicShelf.setRememberProgress(!snapshot.settings.rememberProgressEnabled);
     setSnapshot(next);
   }
 
   async function preloadAllContent(): Promise<void> {
-    const coverPaths = snapshot.items.map((item) => item.coverPath).filter((path): path is string => Boolean(path));
+    const imageItemsWithoutCover = snapshot.items.filter(
+      (item) => (item.category === "comic" || item.category === "image") && !item.coverPath && item.pagePaths.length > 0
+    );
     const videoItems = snapshot.items.filter((item) => previewVideoPath(item) && !item.videoCoverPath);
     const tasks = [
-      ...coverPaths.map((path) => ({ type: "cover" as const, path })),
+      ...imageItemsWithoutCover.map((item) => ({ type: "cover" as const, item, path: item.pagePaths[0] })),
       ...videoItems.map((item) => ({ type: "video" as const, item, path: previewVideoPath(item)! }))
     ];
     if (tasks.length === 0) return;
@@ -1819,6 +2275,12 @@ function App(): JSX.Element {
         const url = window.comicShelf.assetUrl(task.path);
         if (task.type === "cover") {
           await preloadImage(url);
+          if (!task.item.coverPath) {
+            setSnapshot((current) => ({
+              ...current,
+              items: current.items.map((item) => (item.id === task.item.id ? { ...item, coverPath: task.path } : item))
+            }));
+          }
         } else {
           const dataUrl = await captureVideoCover(url);
           if (dataUrl) {
@@ -1923,6 +2385,10 @@ function App(): JSX.Element {
     setPureReading(false);
     setFullscreen(false);
     void window.comicShelf.setFullscreen(false);
+    if (displayMode === "scroll") {
+      shouldRestoreShelfScroll.current = true;
+      setGridScrollTop(savedShelfScrollTop.current);
+    }
     setViewMode("grid");
   }
 
@@ -2096,38 +2562,10 @@ function App(): JSX.Element {
               <Trash2 size={16} />
               <span>{t.clearLibrary}</span>
             </button>
-            <p className="cache-hint">{t.cacheHint}</p>
-            <p className="cache-hint">{t.highPerformanceHint}</p>
-            <button className="admin-button" onClick={() => void toggleHighPerformance()} disabled={busy}>
-              <Shield size={16} />
-              <span>{snapshot.settings.highPerformanceMode ? t.disableHighPerformance : t.enableHighPerformance}</span>
-            </button>
-            <p className="cache-hint">{t.rememberProgressHint}</p>
-            <button className="organize-button secondary" onClick={() => void toggleRememberProgress()} disabled={busy}>
-              <BookOpen size={16} />
-              <span>{snapshot.settings.rememberProgressEnabled ? t.disableRememberProgress : t.enableRememberProgress}</span>
-            </button>
-            <button className="organize-button secondary" onClick={() => void preloadAllContent()} disabled={busy}>
+            <button className="organize-button secondary" onClick={() => setViewMode("settings")}>
               <Settings size={16} />
-              <span>{t.preloadAll}</span>
+              <span>性能与缓存设置</span>
             </button>
-            <button className="organize-button secondary" onClick={() => void toggleCoverCache()} disabled={busy}>
-              <Settings size={16} />
-              <span>{snapshot.settings.coverCacheEnabled ? t.disableCache : t.enableCache}</span>
-            </button>
-            <button className="organize-button secondary" onClick={() => void chooseCoverCacheDirectory()} disabled={busy}>
-              <FolderOpen size={16} />
-              <span>{t.chooseCacheFolder}</span>
-            </button>
-            <p className="cache-hint" title={snapshot.settings.coverCacheDirectory ?? ""}>
-              {t.cacheFolder}: {snapshot.settings.coverCacheDirectory ?? "Default"}
-            </p>
-            {snapshot.settings.coverCacheEnabled && (
-              <button className="danger-button" onClick={() => void clearCoverCache()} disabled={busy}>
-                <Trash2 size={16} />
-                <span>{t.disableCache}</span>
-              </button>
-            )}
           </section>
 
           <section className="utility-panel">
@@ -2154,6 +2592,7 @@ function App(): JSX.Element {
           </section>
 
           <p className="notice">{notice}</p>
+          <p className="app-version">Offline Library {appVersion}</p>
         </aside>
       )}
 
@@ -2276,7 +2715,18 @@ function App(): JSX.Element {
               <p>{t.noContentHint}</p>
             </div>
           ) : (
-            <div ref={gridRef} className="book-grid" style={{ ["--grid-columns" as string]: String(gridColumns), ["--grid-rows" as string]: String(rowsPerPage) }}>
+            <div
+              ref={gridRef}
+              className={`book-grid ${isMemoryIdle ? "memory-idle" : ""}`}
+              onScroll={(event) => {
+                setGridScrollTop(event.currentTarget.scrollTop);
+                if (displayMode === "scroll" && viewMode === "grid") {
+                  savedShelfScrollTop.current = event.currentTarget.scrollTop;
+                }
+              }}
+              style={{ ["--grid-columns" as string]: String(gridColumns), ["--grid-rows" as string]: String(rowsPerPage) }}
+            >
+              {displayMode === "scroll" && scrollTopSpacer > 0 && <div className="virtual-grid-spacer" style={{ height: scrollTopSpacer }} />}
               {visibleItems.map((item) => {
                 const isSelected = selectedIds.includes(item.id);
                 const previewName = currentReadableImage(item) ? fileName(currentReadableImage(item)!) : null;
@@ -2291,9 +2741,15 @@ function App(): JSX.Element {
                     {item.category === "text" ? (
                       <DocumentCover item={item} />
                     ) : item.coverPath ? (
-                      <img src={window.comicShelf.assetUrl(item.coverPath)} alt={item.title} loading="lazy" />
+                      isMemoryIdle ? (
+                        <div className="missing-cover idle-cover">
+                          <CategoryIcon category={item.category} size={38} />
+                        </div>
+                      ) : (
+                        <img src={window.comicShelf.assetUrl(item.coverPath)} alt={item.title} loading="lazy" />
+                      )
                     ) : item.category === "video" || item.category === "series" ? (
-                      <VideoCoverPreview item={item} />
+                      <VideoCoverPreview item={item} idle={isMemoryIdle} staticOnly={performanceSettings.staticVideoPreview} />
                     ) : (
                       <div className="missing-cover">
                         <CategoryIcon category={item.category} size={38} />
@@ -2346,8 +2802,118 @@ function App(): JSX.Element {
                 </article>
                 );
               })}
+              {displayMode === "scroll" && scrollBottomSpacer > 0 && <div className="virtual-grid-spacer" style={{ height: scrollBottomSpacer }} />}
             </div>
           )}
+        </section>
+      )}
+
+      {viewMode === "settings" && (
+        <section className="settings-view">
+          <header className="topbar settings-topbar">
+            <button className="settings-back-button" onClick={() => setViewMode("grid")}>
+              <ChevronLeft size={18} />
+              <span>{st.back}</span>
+            </button>
+            <div>
+              <h2>{st.title}</h2>
+              <p>{st.intro}</p>
+            </div>
+            <button className="settings-apply-button" onClick={() => void applyCurrentSettings()}>
+              <CheckSquare size={16} />
+              <span>{st.applySettings}</span>
+            </button>
+          </header>
+
+          <div className="settings-page">
+            <section className="settings-group">
+              <div className="settings-group-heading">
+                <div>
+                  <h3>{st.presets}</h3>
+                  <p>{st.presetsHint}</p>
+                </div>
+                <button className="settings-detect-button" onClick={() => void detectSystemProfile()}>
+                  <Settings size={16} />
+                  <span>{st.detect}</span>
+                </button>
+              </div>
+              {systemProfile && (
+                <div className="system-profile-card">
+                  <strong>{st.detected}</strong>
+                  <span>{st.cores}: {systemProfile.cpuCores}</span>
+                  <span>{st.memory}: {systemProfile.memoryGb} GB</span>
+                  <span>{st.recommended}: {st.presetNames[systemProfile.recommendedPreset]}</span>
+                  <button onClick={() => void applyPerformancePreset(systemProfile.recommendedPreset)}>{st.applyRecommended}</button>
+                </div>
+              )}
+              <div className="preset-grid">
+                {(["low", "balanced", "high", "extreme"] as PerformancePreset[]).map((preset) => (
+                  <button
+                    className={"preset-card " + (performanceSettings.preset === preset ? "active" : "")}
+                    key={preset}
+                    onClick={() => void applyPerformancePreset(preset)}
+                  >
+                    <strong>{st.presetNames[preset]}</strong>
+                    <span>{st.presetDescriptions[preset]}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section className="settings-group">
+              <h3>{st.details}</h3>
+              <SettingToggle checked={performanceSettings.lazyLibraryIndex} title={st.lazyLibraryIndex} description={st.lazyLibraryIndexDesc} tradeoff={st.lazyLibraryIndexTrade} onChange={(checked) => void updatePerformanceSettings({ lazyLibraryIndex: checked })} />
+              <SettingToggle checked={performanceSettings.lazyPagePaths} title={st.lazyPagePaths} description={st.lazyPagePathsDesc} tradeoff={st.lazyPagePathsTrade} onChange={(checked) => void updatePerformanceSettings({ lazyPagePaths: checked })} />
+              <SettingToggle checked={performanceSettings.demandLoadCovers} title={st.demandLoadCovers} description={st.demandLoadCoversDesc} tradeoff={st.demandLoadCoversTrade} onChange={(checked) => void updatePerformanceSettings({ demandLoadCovers: checked })} />
+              <SettingToggle checked={performanceSettings.reducedCoverCache} title={st.reducedCoverCache} description={st.reducedCoverCacheDesc} tradeoff={st.reducedCoverCacheTrade} onChange={(checked) => void updatePerformanceSettings({ reducedCoverCache: checked })} />
+              <div className="setting-slider">
+                <div>
+                  <strong>{st.coverPixels}</strong>
+                  <small>{st.coverPixelsHint}</small>
+                </div>
+                <input type="range" min={160} max={720} step={40} value={performanceSettings.coverPreviewWidth} onChange={(event) => void updatePerformanceSettings({ coverPreviewWidth: Number(event.target.value) })} />
+                <span>{performanceSettings.coverPreviewWidth}px</span>
+              </div>
+              <div className="setting-slider">
+                <div>
+                  <strong>{st.coverQuality}</strong>
+                  <small>{st.coverQualityHint}</small>
+                </div>
+                <input type="range" min={45} max={92} step={1} value={performanceSettings.coverPreviewQuality} onChange={(event) => void updatePerformanceSettings({ coverPreviewQuality: Number(event.target.value) })} />
+                <span>{performanceSettings.coverPreviewQuality}%</span>
+              </div>
+              <SettingToggle checked={performanceSettings.staticVideoPreview} title={st.staticVideoPreview} description={st.staticVideoPreviewDesc} tradeoff={st.staticVideoPreviewTrade} onChange={(checked) => void updatePerformanceSettings({ staticVideoPreview: checked })} />
+              <SettingToggle checked={performanceSettings.readerNearbyPagesOnly} title={st.readerNearby} description={st.readerNearbyDesc} tradeoff={st.readerNearbyTrade} onChange={(checked) => void updatePerformanceSettings({ readerNearbyPagesOnly: checked })} />
+              <SettingToggle checked={performanceSettings.tightVirtualization} title={st.tightVirtualization} description={st.tightVirtualizationDesc} tradeoff={st.tightVirtualizationTrade} onChange={(checked) => void updatePerformanceSettings({ tightVirtualization: checked })} />
+              <SettingToggle checked={performanceSettings.idleAutoRelease} title={st.idleAutoRelease} description={st.idleAutoReleaseDesc} tradeoff={st.idleAutoReleaseTrade} onChange={(checked) => void updatePerformanceSettings({ idleAutoRelease: checked })} />
+              <label className="setting-number setting-select">
+                <span>
+                  <strong>{st.idleWait}</strong>
+                  <small>{st.idleWaitHint}</small>
+                </span>
+                <select value={performanceSettings.idleReleaseMinutes} onChange={(event) => void updatePerformanceSettings({ idleReleaseMinutes: Number(event.target.value) })}>
+                  {idleReleaseOptions.map((minutes) => (
+                    <option value={minutes} key={minutes}>{minutes} {st.minutes}</option>
+                  ))}
+                </select>
+              </label>
+            </section>
+
+            <section className="settings-group">
+              <h3>{st.cacheProgress}</h3>
+              <p>{t.cacheHint}</p>
+              <div className="settings-actions-row">
+                <button onClick={() => void preloadAllContent()} disabled={busy}><Settings size={16} /><span>{t.preloadAll}</span></button>
+                <button onClick={() => void toggleCoverCache()} disabled={busy}><Settings size={16} /><span>{snapshot.settings.coverCacheEnabled ? t.disableCache : t.enableCache}</span></button>
+                <button onClick={() => void chooseCoverCacheDirectory()} disabled={busy}><FolderOpen size={16} /><span>{t.chooseCacheFolder}</span></button>
+                <button onClick={() => void toggleRememberProgress()} disabled={busy}><BookOpen size={16} /><span>{snapshot.settings.rememberProgressEnabled ? t.disableRememberProgress : t.enableRememberProgress}</span></button>
+              </div>
+              <p className="cache-hint" title={snapshot.settings.coverCacheDirectory ?? ""}>{t.cacheFolder}: {snapshot.settings.coverCacheDirectory ?? "Default"}</p>
+              {snapshot.settings.coverCacheEnabled && (
+                <button className="danger-button compact-danger" onClick={() => void clearCoverCache()} disabled={busy}><Trash2 size={16} /><span>{t.disableCache}</span></button>
+              )}
+            </section>
+          </div>
         </section>
       )}
 
@@ -2558,8 +3124,18 @@ function App(): JSX.Element {
                 <div className="document-reader pdf-reader">
                   {readerDisplayMode === "paged" && (
                     <>
-                      <button className="page-hitbox left pdf-hitbox" title={t.prev} onClick={() => changePdfPage(-1)} />
-                      <button className="page-hitbox right pdf-hitbox" title={t.next} onClick={() => changePdfPage(1)} />
+                      <button
+                        className="page-hitbox left pdf-hitbox"
+                        title={t.prev}
+                        onClick={() => changePdfPage(-1)}
+                        onWheel={(event) => scrollPagedStage(event, ".pdf-canvas-shell")}
+                      />
+                      <button
+                        className="page-hitbox right pdf-hitbox"
+                        title={t.next}
+                        onClick={() => changePdfPage(1)}
+                        onWheel={(event) => scrollPagedStage(event, ".pdf-canvas-shell")}
+                      />
                     </>
                   )}
                   <PdfCanvasViewer
@@ -2699,14 +3275,24 @@ function App(): JSX.Element {
             </div>
           ) : (
             <div className="page-stage">
-              <button className="page-hitbox left" title={t.prev} onClick={() => void goToPage(selectedItem.currentPage - 1)} />
+              <button
+                className="page-hitbox left"
+                title={t.prev}
+                onClick={() => void goToPage(selectedItem.currentPage - 1)}
+                onWheel={(event) => scrollPagedStage(event, ".page-stage")}
+              />
               <img
                 className={readerImageClass}
                 style={{ ["--zoom" as string]: `${zoom}%`, ["--zoom-scale" as string]: String(zoom / 100) }}
                 src={window.comicShelf.assetUrl(selectedItem.pagePaths[selectedItem.currentPage])}
                 alt={`${selectedItem.title} page ${selectedItem.currentPage + 1}`}
               />
-              <button className="page-hitbox right" title={t.next} onClick={() => void goToPage(selectedItem.currentPage + 1)} />
+              <button
+                className="page-hitbox right"
+                title={t.next}
+                onClick={() => void goToPage(selectedItem.currentPage + 1)}
+                onWheel={(event) => scrollPagedStage(event, ".page-stage")}
+              />
             </div>
           )}
         </section>

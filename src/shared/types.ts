@@ -1,8 +1,32 @@
+// 主进程、preload、React 渲染层共用的数据类型都放这里。
+// 改字段时要小心：这里的结构会影响 settings.json、library.json 以及前端状态。
 export type LibrarySourceType = "folder" | "archive" | "file";
 export type LibraryCategory = "comic" | "image" | "text" | "audio" | "video" | "series" | "archive" | "other";
 export type AppLanguage = "zh" | "en" | "ja";
 export type LibrarySortKey = "az" | "za" | "newest" | "oldest" | "recent";
 export type DocumentKind = "plain" | "pdf" | "word" | "ebook";
+export type PerformancePreset = "low" | "balanced" | "high" | "extreme";
+
+export interface SystemProfile {
+  cpuCores: number;
+  memoryGb: number;
+  recommendedPreset: PerformancePreset;
+}
+
+export interface PerformanceSettings {
+  preset: PerformancePreset;
+  lazyLibraryIndex: boolean;
+  lazyPagePaths: boolean;
+  demandLoadCovers: boolean;
+  reducedCoverCache: boolean;
+  staticVideoPreview: boolean;
+  readerNearbyPagesOnly: boolean;
+  tightVirtualization: boolean;
+  idleAutoRelease: boolean;
+  idleReleaseMinutes: number;
+  coverPreviewWidth: number;
+  coverPreviewQuality: number;
+}
 
 export interface LibraryFile {
   path: string;
@@ -12,6 +36,7 @@ export interface LibraryFile {
 }
 
 export interface LibraryItem {
+  // 一个 LibraryItem 就是书架上的一个资源卡片，可以是图片集、单张图片、文本、音频、视频或压缩包。
   id: string;
   title: string;
   sourceType: LibrarySourceType;
@@ -56,6 +81,7 @@ export interface AppSettings {
   scannedArchiveDirectories: string[];
   highPerformanceMode: boolean;
   rememberProgressEnabled: boolean;
+  performance: PerformanceSettings;
 }
 
 export interface ImportResult {

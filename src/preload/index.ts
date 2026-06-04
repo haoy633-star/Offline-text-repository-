@@ -10,9 +10,13 @@ import type {
   LibraryItem,
   LibrarySnapshot,
   OpenResult,
-  OrganizeResult
+  OrganizeResult,
+  PerformanceSettings,
+  SystemProfile
 } from "../shared/types";
 
+// Preload 是主进程和 React 界面之间的安全桥。
+// 渲染层不能直接碰 Node/Electron 能力，所以这里把允许调用的 IPC 方法集中暴露成 window.comicShelf。
 const api = {
   getLibrary: (): Promise<LibrarySnapshot> => ipcRenderer.invoke("library:get"),
   importFolders: (): Promise<ImportResult> => ipcRenderer.invoke("library:import-folders"),
@@ -21,6 +25,16 @@ const api = {
     const listener = (_: Electron.IpcRendererEvent, progress: ImportProgress): void => callback(progress);
     ipcRenderer.on("library:import-progress", listener);
     return () => ipcRenderer.removeListener("library:import-progress", listener);
+  },
+  onLibraryChanged: (callback: () => void): (() => void) => {
+    const listener = (): void => callback();
+    ipcRenderer.on("library:changed", listener);
+    return () => ipcRenderer.removeListener("library:changed", listener);
+  },
+  onBackgroundMode: (callback: (enabled: boolean) => void): (() => void) => {
+    const listener = (_: Electron.IpcRendererEvent, enabled: boolean): void => callback(enabled);
+    ipcRenderer.on("app:background-mode", listener);
+    return () => ipcRenderer.removeListener("app:background-mode", listener);
   },
   updateProgress: (itemId: string, page: number): Promise<LibraryItem | null> =>
     ipcRenderer.invoke("library:update-progress", itemId, page),
@@ -41,6 +55,7 @@ const api = {
   relaunchAsAdmin: (): Promise<void> => ipcRenderer.invoke("app:relaunch-admin"),
   quitApp: (): Promise<void> => ipcRenderer.invoke("app:quit"),
   setFullscreen: (enabled: boolean): Promise<void> => ipcRenderer.invoke("app:set-fullscreen", enabled),
+  releaseIdleMemory: (): Promise<void> => ipcRenderer.invoke("app:release-idle-memory"),
   openReferenceImage: (filePath: string, title: string): Promise<void> => ipcRenderer.invoke("app:open-reference-image", filePath, title),
   setPlayer: (category: LibraryCategory): Promise<AppSettings> => ipcRenderer.invoke("settings:set-player", category),
   clearPlayer: (category: LibraryCategory): Promise<AppSettings> => ipcRenderer.invoke("settings:clear-player", category),
@@ -55,6 +70,8 @@ const api = {
   saveVideoCover: (itemId: string, dataUrl: string): Promise<LibrarySnapshot> => ipcRenderer.invoke("library:save-video-cover", itemId, dataUrl),
   clearCoverCache: (): Promise<LibrarySnapshot> => ipcRenderer.invoke("settings:clear-cover-cache"),
   setHighPerformance: (enabled: boolean): Promise<LibrarySnapshot> => ipcRenderer.invoke("settings:set-high-performance", enabled),
+  setPerformance: (settings: Partial<PerformanceSettings>): Promise<LibrarySnapshot> => ipcRenderer.invoke("settings:set-performance", settings),
+  getSystemProfile: (): Promise<SystemProfile> => ipcRenderer.invoke("settings:get-system-profile"),
   setRememberProgress: (enabled: boolean): Promise<LibrarySnapshot> => ipcRenderer.invoke("settings:set-remember-progress", enabled),
   revealInExplorer: (filePath: string): Promise<void> => ipcRenderer.invoke("file:reveal", filePath),
   readTextFile: (filePath: string): Promise<string> => ipcRenderer.invoke("file:read-text", filePath),

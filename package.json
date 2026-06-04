@@ -1,6 +1,6 @@
 {
   "name": "offline-comic-shelf",
-  "version": "1.0.0",
+  "version": "0.32.0",
   "description": "A local-first offline media library and comic organizer for Windows.",
   "main": "out/main/index.js",
   "author": "haoy633-star",

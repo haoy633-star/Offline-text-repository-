@@ -1,5 +1,6 @@
 node_modules/
 .npm-cache/
+downloads/
 dist/
 release/
 out/
